@@ -19,11 +19,13 @@ class BasePriorSDE(torch.nn.Module):
 class Brownian(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
+        self.noise_type = "diagonal"
+        self.sde_type = "ito"
 
-    def drift(self, x: Tensor, t: Tensor) -> Tensor:
+    def f(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.zeros_like(x, device=x.device)
 
-    def diffusion(self, x: Tensor, t: Tensor) -> Tensor:
+    def g(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.ones_like(x, device=x.device)
 
 
