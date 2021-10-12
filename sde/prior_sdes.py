@@ -1,4 +1,5 @@
 import torch
+from torch import distributions
 from absl import flags
 
 Tensor = torch.Tensor
@@ -10,10 +11,20 @@ flags.DEFINE_enum("prior_sde", "brownian",
 FLAGS = flags.FLAGS
 
 
-class BasePriorSDE(torch.nn.Module):
+class BasePriorSDE:
     def __init__(self, dims: int):
         super().__init__()
         self.dims = dims
+
+    def f(self, t: Tensor, x: Tensor) -> Tensor:
+        raise NotImplementedError
+
+    def g(self, t: Tensor, x: Tensor) -> Tensor:
+        raise NotImplementedError
+
+    @staticmethod
+    def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
+        raise NotImplementedError
 
 
 class Brownian(BasePriorSDE):
@@ -28,8 +39,17 @@ class Brownian(BasePriorSDE):
     def g(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.ones_like(x, device=x.device)
 
+    @staticmethod
+    def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
+        if len(delta_t.shape) == 0:
+            scale_tril = torch.diag_embed(torch.ones_like(x) * torch.sqrt(delta_t))
+            return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
+        else:
+            # TODO implement general delta_t
+            pass
 
-class SDE(torch.nn.Module):
+
+class SDE:
     sde_type = 'ito'
 
     def __init__(self, drift, diffusion, noise_type="diagonal"):

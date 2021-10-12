@@ -7,7 +7,7 @@ python main.py \
   --prior_sde=brownian \
   --batch_size=50 \
   --num_epochs=30 \
-  --eval_frequency=2 \
+  --eval_frequency=20 \
   --learning_rate=1e-3\
   --num_steps=5 \
   --delta_t=0.2 \

@@ -10,8 +10,9 @@ from absl import flags
 from matplotlib.figure import Figure
 import geomloss
 import torchsde
+import numpy as np
 
-from sde import drifts, diffusions, prior_sdes, variational
+from sde import drifts, diffusions, prior_sdes, variational, priors
 from stein import kernel
 
 
@@ -93,10 +94,10 @@ class Model(pl.LightningModule):
             self.diffusion_backward = self.diffusion_forward
 
         # Variational q
-        self.q = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
-        self.p = variational.variational_dict["identity_gaussian"](observed_dims, observed_dims)
-
-        self.likelihood = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
+        self.q: variational.BaseVariational \
+            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
+        self.p: priors.BasePrior \
+            = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
 
         # Delta_t
         self.time_values = torch.linspace(0, FLAGS.delta_t * FLAGS.num_steps, FLAGS.num_steps+1,
@@ -129,22 +130,31 @@ class Model(pl.LightningModule):
 
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
+
         xs = torch.empty_like(ys, device=self.device)
 
-        q_dist = self.q(ys)
-        p_dist = self.p(ys, self.time_values)
-        s_is = q_dist.sample()
+        q_prob = self.q(ys[:-1])
+        s_is = q_prob.sample()
         xs[0] = s_is[0]
-        # xs[0] = ys[0]
 
-        for i in range(ys.shape[0] - 1):
-            new_xs = self.solve(s_is[i], sde, self.time_values[i:i + 2])# , -1 if self.forward else 1.)
-            xs[i + 1] = new_xs[-1]
+        for i in range(ys.shape[0]-1):
+            xs[i+1] = self.solve(s_is[i], sde, self.time_values[i:i+2].to(ys.device))[-1]
 
-        likelihood = self.likelihood(ys).log_prob(xs)
-        kl = torch.distributions.kl.kl_divergence(q_dist, p_dist)
+        # Likelihood
+        likelihood_dist = self.p(xs[1:])
+        likelihood = likelihood_dist.log_prob(ys[1:]).mean(-1).sum()
 
-        return -(likelihood - torch.distributions.kl.kl_divergence(q_dist, p_dist)).mean(-1).sum()
+        # Variational KL
+        prior_dist = self.p(ys[:-1])
+        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).mean(-1).sum()
+
+        # Variational KSD
+        transition_density = self.prior_sde.transition_density(s_is, torch.tensor(FLAGS.delta_t, device=self.device))
+        grad_transition = functional.jacobian(
+            lambda x: transition_density.log_prob(x).sum(), xs[1:], create_graph=True, vectorize=True)
+        ksd = kernel.stein_discrepancy(xs[1:], grad_transition)
+
+        return -(likelihood - variational_kl - ksd)
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         z_backward = self.solve(x_data, self.backward_sde, self.time_values)
@@ -164,17 +174,11 @@ class Model(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         optim = self.optimizers()[self.optim_dict_conv[self.data_type]]
-        optim_q = self.optimizers()[-1]
         x = batch[self.data_type]
+
         with torch.no_grad():
             xs = self.solve(x, self.solve_sde, self.time_values).detach()
 
-        # for _ in range(FLAGS.batch_repeats):
-        #     optim_q.zero_grad(set_to_none=True)
-        #     loss = self.loss(xs, self.optim_sde)
-        #     self.manual_backward(loss)
-        #     torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
-        #     optim_q.step()
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad(set_to_none=True)
             loss = self.loss(xs, self.optim_sde)
@@ -238,16 +242,13 @@ class Model(pl.LightningModule):
     def configure_optimizers(self):
         optim_backward = torch.optim.Adam([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
-            {"params": self.q.parameters()}, {"params": self.likelihood.parameters()}
+            {"params": self.q.parameters()}
         ], lr=FLAGS.learning_rate)
         optim_forward = torch.optim.Adam([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
-            {"params": self.q.parameters()}, {"params": self.likelihood.parameters()}
-        ], lr=FLAGS.learning_rate)
-        optim_q = torch.optim.Adam([
             {"params": self.q.parameters()}
         ], lr=FLAGS.learning_rate)
-        return optim_backward, optim_forward  # , optim_q
+        return optim_backward, optim_forward
 
     def make_plot_figs(self, output: Output,
                        step: Union[int, str]) -> None:
@@ -259,7 +260,7 @@ class Model(pl.LightningModule):
         del fig_list
         del name_list
         del output
-        # gc.collect()
+        gc.collect()
 
     def save_figs(self,
                   fig_names: List[str],

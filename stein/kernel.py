@@ -7,16 +7,16 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
     pairwise_dists = torch.cdist(theta, theta)
     diffs = theta.unsqueeze(2) - theta.unsqueeze(1)
 
-    # h = torch.flatten(pairwise_dists, 1, -1).median(dim=1)[0]
-    # h = torch.sqrt(0.5 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))[:, None, None]
-    h = pairwise_dists.median()
-    h = torch.sqrt(0.0001 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))
+    h = torch.flatten(pairwise_dists, 1, -1).median(dim=1)[0]
+    h = torch.sqrt(0.5 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))[:, None, None]
+    # h = pairwise_dists.median()
+    # h = torch.sqrt(0.0001 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))
 
     kxy = torch.exp(-pairwise_dists / h**2 / 2)
 
-    # h = h.unsqueeze(-1)
+    h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("abcd,abc->abcd", diffs, kxy)
-    # h = h.unsqueeze(-1)
+    h = h.unsqueeze(-1)
     dx2d2kxy = \
         - 1 / h**2 * (-torch.eye(theta.shape[-1], device=theta.device)[None, None, None] +
                       1 / h**2 * torch.einsum("abcd,abce->abcde", diffs, diffs))
