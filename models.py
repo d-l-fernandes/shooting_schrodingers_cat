@@ -125,7 +125,7 @@ class Model(pl.LightningModule):
             self.data_type = "data"
 
     def solve(self, x_0: Tensor, sde, time_values) -> Tensor:
-        xs = torchsde.sdeint(sde, x_0, time_values, adaptive=False, dt=FLAGS.delta_t)
+        xs = torchsde.sdeint(sde, x_0, time_values, method="srk", adaptive=False, dt=FLAGS.delta_t)
         return xs
 
     def loss(self, ys: Tensor, sde):
@@ -133,7 +133,7 @@ class Model(pl.LightningModule):
 
         xs = torch.empty_like(ys, device=self.device)
 
-        q_prob = self.q(ys[:-1])
+        q_prob = self.q(ys)
         s_is = q_prob.sample()
         xs[0] = s_is[0]
 
@@ -141,19 +141,22 @@ class Model(pl.LightningModule):
             xs[i+1] = self.solve(s_is[i], sde, self.time_values[i:i+2].to(ys.device))[-1]
 
         # Likelihood
-        likelihood_dist = self.p(xs[1:])
-        likelihood = likelihood_dist.log_prob(ys[1:]).mean(-1).sum()
+        likelihood_dist = self.p(xs, torch.tensor(FLAGS.delta_t), sde.g(self.time_values, xs))
+        likelihood = likelihood_dist.log_prob(ys).mean(-1).sum()
 
         # Variational KL
-        prior_dist = self.p(ys[:-1])
+        prior_dist = self.p(ys, torch.tensor(FLAGS.delta_t), sde.g(self.time_values, ys))
         variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).mean(-1).sum()
 
         # Variational KSD
         transition_density = self.prior_sde.transition_density(s_is, torch.tensor(FLAGS.delta_t, device=self.device))
         grad_transition = functional.jacobian(
-            lambda x: transition_density.log_prob(x).sum(), xs[1:], create_graph=True, vectorize=True)
-        ksd = kernel.stein_discrepancy(xs[1:], grad_transition)
+            lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True, vectorize=True)
+        ksd = kernel.stein_discrepancy(xs, grad_transition)
 
+        #  print(likelihood)
+        #  print(variational_kl)
+        #  print(ksd)
         return -(likelihood - variational_kl - ksd)
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
@@ -242,11 +245,11 @@ class Model(pl.LightningModule):
     def configure_optimizers(self):
         optim_backward = torch.optim.Adam([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
-            {"params": self.q.parameters()}
+            {"params": self.q.parameters()}, {"params": self.p.parameters()}
         ], lr=FLAGS.learning_rate)
         optim_forward = torch.optim.Adam([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
-            {"params": self.q.parameters()}
+            {"params": self.q.parameters()}, {"params": self.p.parameters()}
         ], lr=FLAGS.learning_rate)
         return optim_backward, optim_forward
 

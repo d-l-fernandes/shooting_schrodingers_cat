@@ -35,6 +35,7 @@ class Scalar(BaseDiffusion):
     def __init__(self, input_size: int, output_size: int):
         super().__init__(input_size, output_size)
         self.constant = np.sqrt(2)
+        self.constant = np.sqrt(1)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         return torch.ones_like(x, device=x.device) * self.constant

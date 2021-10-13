@@ -29,4 +29,4 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
 
     u = first_term + second_term + third_term + trace_dx2d2lxy
 
-    return (1 / theta.shape[1]**2 * torch.flatten(u, 1, -1).sum(-1)).sum()
+    return torch.abs(torch.flatten(u, 1, -1).mean(-1).sum())

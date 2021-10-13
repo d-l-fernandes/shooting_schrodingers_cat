@@ -1,10 +1,11 @@
 cd ..
 python main.py \
-  --drift=nn_space \
+  --drift=nn_general \
   --diffusion=constant_diagonal \
   --dataset=toy_experiment_blobs_2d \
   --prior=gaussian \
   --prior_sde=brownian \
+  --prior_dist=learnable_gaussian \
   --batch_size=50 \
   --num_epochs=30 \
   --eval_frequency=20 \
