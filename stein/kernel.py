@@ -8,7 +8,8 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
     diffs = theta.unsqueeze(2) - theta.unsqueeze(1)
 
     h = torch.flatten(pairwise_dists, 1, -1).median(dim=1)[0]
-    h = torch.sqrt(0.5 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))[:, None, None]
+    # h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))[:, None, None]
+    h = torch.sqrt(h)[:, None, None]
     # h = pairwise_dists.median()
     # h = torch.sqrt(0.0001 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))
 
