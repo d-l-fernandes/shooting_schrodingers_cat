@@ -2,7 +2,8 @@ cd ..
 python main.py \
   --drift=nn_general \
   --diffusion=scalar \
-  --dataset=toy_experiment_blobs_2d \
+  --dataset=toy_experiment_blobs_3d \
+  --dims=3 \
   --prior=gaussian \
   --prior_sde=brownian \
   --prior_dist=gaussian \
