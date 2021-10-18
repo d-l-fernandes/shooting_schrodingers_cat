@@ -34,11 +34,12 @@ class BaseDiffusion(torch.nn.Module):
 class Scalar(BaseDiffusion):
     def __init__(self, input_size: int, output_size: int):
         super().__init__(input_size, output_size)
-        self.constant = np.sqrt(2)
-        self.constant = np.sqrt(1)
+        # self.constant = np.sqrt(2)
+        self.constant = np.sqrt(1.)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        return torch.ones_like(x, device=x.device) * self.constant
+        return torch.diag_embed(torch.ones_like(x, device=x.device) * self.constant)
+        # return torch.ones_like(x, device=x.device) * self.constant
 
 
 class ConstantDiagonal(BaseDiffusion):
@@ -48,7 +49,8 @@ class ConstantDiagonal(BaseDiffusion):
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         diff = torch.einsum("a,...a->...a", torch.sigmoid(self.constant), torch.ones_like(x, device=x.device))
-        return diff
+        # return diff
+        return torch.diag_embed(diff)
 
 
 class NNTimeDiagonal(BaseDiffusion):

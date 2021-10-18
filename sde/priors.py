@@ -50,7 +50,8 @@ class DiffusionGaussian(BasePrior):
         self.sigma = torch.nn.Parameter(FLAGS.sigma * torch.ones((output_size,), device=device), requires_grad=True)
 
     def forward(self, x: Tensor, delta_t: Tensor, diffusions: Tensor) -> distributions.Distribution:
-        scale_tril = torch.sigmoid(self.sigma) * torch.sqrt(delta_t) * diffusions
+        # scale_tril = torch.sigmoid(self.sigma) * torch.sqrt(delta_t) * diffusions
+        scale_tril = torch.sqrt(delta_t) * diffusions
         return distributions.MultivariateNormal(loc=x, scale_tril=torch.diag_embed(scale_tril))
 
 

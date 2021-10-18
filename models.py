@@ -10,9 +10,9 @@ from absl import flags
 from matplotlib.figure import Figure
 import geomloss
 import torchsde
-import numpy as np
 
 from sde import drifts, diffusions, prior_sdes, variational, priors
+from weak_solver.sdeint import integrate
 from stein import kernel
 
 
@@ -46,7 +46,6 @@ class Metrics(NamedTuple):
 class Output(NamedTuple):
     z_values_backward: Tensor
     z_values_forward: Tensor
-    z_generated: Tensor
     x_data: Tensor
     x_prior: Tensor
 
@@ -54,7 +53,6 @@ class Output(NamedTuple):
         return Output(
             torch.cat((self.z_values_backward, other.z_values_backward)),
             torch.cat((self.z_values_forward, other.z_values_forward)),
-            torch.cat((self.z_generated, other.z_generated)),
             torch.cat((self.x_data, other.x_data)),
             torch.cat((self.x_prior, other.x_prior))
         )
@@ -84,20 +82,22 @@ class Model(pl.LightningModule):
         self.diffusion_backward: diffusions.BaseDiffusion = \
             diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims)
 
+        if FLAGS.same_diffusion:
+            self.diffusion_backward = self.diffusion_forward
+
         self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion_forward)
         self.backward_sde = prior_sdes.SDE(self.drift_backward, self.diffusion_backward)
 
         # Prior
         self.prior_sde: prior_sdes.BasePriorSDE = prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
 
-        if FLAGS.same_diffusion:
-            self.diffusion_backward = self.diffusion_forward
-
         # Variational q
         self.q: variational.BaseVariational \
             = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
-        self.p: priors.BasePrior \
+        self.likelihood: priors.BasePrior \
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
+        self.p: priors.BasePrior \
+            = priors.priors_dict["gaussian"](observed_dims, observed_dims)
 
         # Delta_t
         self.time_values = torch.linspace(0, FLAGS.delta_t * FLAGS.num_steps, FLAGS.num_steps+1,
@@ -125,7 +125,8 @@ class Model(pl.LightningModule):
             self.data_type = "data"
 
     def solve(self, x_0: Tensor, sde, time_values) -> Tensor:
-        xs = torchsde.sdeint(sde, x_0, time_values, method="srk", adaptive=False, dt=FLAGS.delta_t)
+        # xs = torchsde.sdeint(sde, x_0, time_values, method="euler", adaptive=False, dt=FLAGS.delta_t)
+        xs = integrate(sde, x_0, time_values)
         return xs
 
     def loss(self, ys: Tensor, sde):
@@ -133,7 +134,7 @@ class Model(pl.LightningModule):
 
         xs = torch.empty_like(ys, device=self.device)
 
-        q_prob = self.q(ys)
+        q_prob = self.q(ys[:-1])
         s_is = q_prob.sample()
         xs[0] = s_is[0]
 
@@ -141,34 +142,34 @@ class Model(pl.LightningModule):
             xs[i+1] = self.solve(s_is[i], sde, self.time_values[i:i+2].to(ys.device))[-1]
 
         # Likelihood
-        likelihood_dist = self.p(xs, torch.tensor(FLAGS.delta_t), sde.g(self.time_values, xs))
-        likelihood = likelihood_dist.log_prob(ys).mean(-1).sum()
+        likelihood_dist = self.likelihood(xs[1:], torch.tensor(FLAGS.delta_t), sde.g(self.time_values[1:], xs[1:]))
+        likelihood = likelihood_dist.log_prob(ys[1:]).mean(-1).sum()
 
         # Variational KL
-        prior_dist = self.p(ys, torch.tensor(FLAGS.delta_t), sde.g(self.time_values, ys))
+        prior_dist = self.p(ys[:-1], torch.tensor(FLAGS.delta_t), sde.g(self.time_values[:-1], ys[:-1]))
         variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).mean(-1).sum()
 
         # Variational KSD
-        transition_density = self.prior_sde.transition_density(s_is, torch.tensor(FLAGS.delta_t, device=self.device))
+        transition_density = self.prior_sde.transition_density(s_is,
+                                                               torch.tensor(FLAGS.delta_t, device=self.device))
         grad_transition = functional.jacobian(
-            lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True, vectorize=True)
-        ksd = kernel.stein_discrepancy(xs, grad_transition)
+            lambda x: transition_density.log_prob(x).sum(), xs[1:], create_graph=True, vectorize=True)
+        ksd = kernel.stein_discrepancy(xs[1:], grad_transition)
 
         #  print(likelihood)
         #  print(variational_kl)
         #  print(ksd)
+        # ksd = 0
         return -(likelihood - variational_kl - ksd)
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         z_backward = self.solve(x_data, self.backward_sde, self.time_values)
-        z_forward = self.solve(z_backward[-1], self.forward_sde, self.time_values)
 
-        z_generated = self.solve(x_prior, self.forward_sde, self.time_values)
+        z_forward = self.solve(x_prior, self.forward_sde, self.time_values)
 
         output = Output(
             z_backward.permute(1, 0, 2),
             z_forward.permute(1, 0, 2),
-            z_generated.permute(1, 0, 2),
             x_data,
             x_prior
         )
@@ -186,7 +187,7 @@ class Model(pl.LightningModule):
             optim.zero_grad(set_to_none=True)
             loss = self.loss(xs, self.optim_sde)
             self.manual_backward(loss)
-            torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
         # torch.cuda.empty_cache()
 
@@ -209,8 +210,8 @@ class Model(pl.LightningModule):
     def validation_epoch_end(self, outputs: List[Output]):
         final_output: Output = reduce(lambda x, y: x + y, outputs)
 
-        prior_wasserstein = self.wasserstein_loss(final_output.x_prior, final_output.z_values_forward[:, 0])
-        data_wasserstein = self.wasserstein_loss(final_output.x_data, final_output.z_generated[:, -1])
+        prior_wasserstein = self.wasserstein_loss(final_output.x_prior, final_output.z_values_backward[:, -1])
+        data_wasserstein = self.wasserstein_loss(final_output.x_data, final_output.z_values_forward[:, -1])
         total_wasserstein = prior_wasserstein + data_wasserstein
 
         metrics = Metrics(torch.tensor([prior_wasserstein.detach().cpu()]),
@@ -243,11 +244,11 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.Adam([
+        optim_backward = torch.optim.AdamW([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
             {"params": self.q.parameters()}, {"params": self.p.parameters()}
         ], lr=FLAGS.learning_rate)
-        optim_forward = torch.optim.Adam([
+        optim_forward = torch.optim.AdamW([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
             {"params": self.q.parameters()}, {"params": self.p.parameters()}
         ], lr=FLAGS.learning_rate)

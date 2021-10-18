@@ -37,7 +37,8 @@ class Brownian(BasePriorSDE):
         return torch.zeros_like(x, device=x.device)
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return torch.ones_like(x, device=x.device)
+        return torch.diag_embed(torch.ones_like(x, device=x.device))
+        # return torch.ones_like(x, device=x.device)
 
     @staticmethod
     def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
