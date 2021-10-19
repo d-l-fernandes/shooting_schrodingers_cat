@@ -24,6 +24,8 @@ datasets_list = [
                     # Experiments
                     "toy_experiment_blobs_2d",
                     "toy_experiment_blobs_3d",
+                    "double_well_left",
+                    "double_well_right",
 ]
 
 flags.DEFINE_integer("batch_size", 10, "Batch Size.")
@@ -286,17 +288,25 @@ class Blobs3D(BaseDataGenerator):
             z_1 = z_values_forward[:, -1]
             z_0 = z_values_backward[:, -1]
 
+            prior_indices = ["Prior"] * x_prior.shape[0]
+            prior_gen_indices = ["Prior_gen"] * z_0.shape[0]
+
             df_prior = pd.DataFrame(
                 {
-                    "Prior_1": x_prior[:, 0], "Prior_gen_1": z_0[:, 0],
-                    "Prior_2": x_prior[:, 1], "Prior_gen_2": z_0[:, 1],
-                    "Prior_3": x_prior[:, 2], "Prior_gen_3": z_0[:, 2],
+                    "Prior_1": np.concatenate((x_prior[:, 0], z_0[:, 0]), axis=0),
+                    "Prior_2": np.concatenate((x_prior[:, 1], z_0[:, 1]), axis=0),
+                    "Prior_3": np.concatenate((x_prior[:, 2], z_0[:, 2]), axis=0),
+                    "Type": np.concatenate((prior_indices, prior_gen_indices))
                 })
+
+            data_indices = ["Data"] * x_data.shape[0]
+            data_gen_indices = ["Data_gen"] * z_1.shape[0]
             df_data = pd.DataFrame(
                 {
-                    "Data_1": x_data[:, 0], "Data_gen_1": z_1[:, 0],
-                    "Data_2": x_data[:, 1], "Data_gen_2": z_1[:, 1],
-                    "Data_3": x_data[:, 2], "Data_gen_3": z_1[:, 2],
+                    "Data_1": np.concatenate((x_data[:, 0], z_1[:, 0]), axis=0),
+                    "Data_2": np.concatenate((x_data[:, 1], z_1[:, 1]), axis=0),
+                    "Data_3": np.concatenate((x_data[:, 2], z_1[:, 2]), axis=0),
+                    "Type": np.concatenate((data_indices, data_gen_indices))
                 })
 
             # Objective
@@ -306,15 +316,18 @@ class Blobs3D(BaseDataGenerator):
                                       wspace=0.1, hspace=0.1)
             self.plot_objective(gs, fig_obj, metrics)
 
-            g_prior = sns.PairGrid(df_prior)
-            g_data = sns.PairGrid(df_data)
+            g_prior = sns.PairGrid(df_prior, hue="Type")
+            g_data = sns.PairGrid(df_data, hue="Type")
 
-            g_prior.map_upper(sns.scatterplot)
+            g_prior.map_upper(sns.scatterplot, alpha=.3)
             g_prior.map_lower(sns.kdeplot)
             g_prior.map_diag(sns.kdeplot)
-            g_data.map_upper(sns.scatterplot)
+            g_data.map_upper(sns.scatterplot, alpha=.3)
             g_data.map_lower(sns.kdeplot)
             g_data.map_diag(sns.kdeplot)
+
+            g_prior.add_legend()
+            g_data.add_legend()
 
             return [fig_obj, g_prior.fig, g_data.fig], ["objective", "results_prior", "results_data"]
 
@@ -322,9 +335,67 @@ class Blobs3D(BaseDataGenerator):
             raise ValueError("Dims must be 3")
 
 
+class DoubleWellLeft(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 500
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., 0.]),
+                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        self.xs_train = blob_1
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., 0.]),
+                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        self.xs_test = blob_1
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
+class DoubleWellRight(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 500
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 0.]),
+                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        self.xs_train = blob_1
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 0.]),
+                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        self.xs_test = blob_1
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
 datasets_dict = {
     "gaussian": Gaussian,
     # Experiments
     "toy_experiment_blobs_2d": Blobs2D,
     "toy_experiment_blobs_3d": Blobs3D,
+    "double_well_left": DoubleWellLeft,
+    "double_well_right": DoubleWellRight,
 }

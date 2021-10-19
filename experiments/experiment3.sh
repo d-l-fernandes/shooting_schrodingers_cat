@@ -2,10 +2,9 @@ cd ..
 python main.py \
   --drift=nn_general \
   --diffusion=scalar \
-  --dataset=toy_experiment_blobs_3d \
-  --dims=3 \
-  --prior=gaussian \
-  --prior_sde=brownian \
+  --dataset=double_well_right \
+  --prior=double_well_left \
+  --prior_sde=double_well \
   --prior_dist=gaussian \
   --batch_size=50 \
   --num_epochs=30 \

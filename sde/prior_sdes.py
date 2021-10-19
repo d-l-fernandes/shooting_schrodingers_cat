@@ -1,11 +1,14 @@
 import torch
 from torch import distributions
+import torch.autograd.functional as functional
 from absl import flags
 
 Tensor = torch.Tensor
 
 flags.DEFINE_enum("prior_sde", "brownian",
-                  ["brownian",
+                  [
+                      "brownian",
+                      "double_well"
                    ],
                   "Prior to use.")
 FLAGS = flags.FLAGS
@@ -50,6 +53,40 @@ class Brownian(BasePriorSDE):
             pass
 
 
+class DoubleWell(BasePriorSDE):
+    def __init__(self, dims: int):
+        super().__init__(dims)
+        self.noise_type = "diagonal"
+        self.sde_type = "ito"
+        if dims != 2:
+            raise RuntimeError("Double well only applicable to 2D.")
+
+    def f(self, t: Tensor, x: Tensor) -> Tensor:
+        grad_u = functional.jacobian(
+            lambda x_grad: self.u(x_grad).sum(), x, create_graph=True, vectorize=True)
+        return -grad_u
+
+    def g(self, t: Tensor, x: Tensor) -> Tensor:
+        return torch.diag_embed(torch.ones_like(x, device=x.device))
+        # return torch.ones_like(x, device=x.device)
+
+    @staticmethod
+    def u(x: Tensor) -> Tensor:
+        x_term = x[:, 0] ** 2
+        y_term = (x[:, 1] + 5) ** 2
+        exp_term = torch.exp(-(x[:, 0]**2 + x[:, 1]**2))
+        return x_term + y_term + exp_term
+
+    @staticmethod
+    def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
+        if len(delta_t.shape) == 0:
+            scale_tril = torch.diag_embed(torch.ones_like(x) * torch.sqrt(delta_t))
+            return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
+        else:
+            # TODO implement general delta_t
+            pass
+
+
 class SDE:
     sde_type = 'ito'
 
@@ -62,4 +99,5 @@ class SDE:
 
 prior_sdes_dict = {
     "brownian": Brownian,
+    "double_well": DoubleWell,
 }
