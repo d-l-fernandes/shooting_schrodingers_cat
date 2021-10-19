@@ -187,7 +187,7 @@ class Model(pl.LightningModule):
             optim.zero_grad(set_to_none=True)
             loss = self.loss(xs, self.optim_sde)
             self.manual_backward(loss)
-            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
         # torch.cuda.empty_cache()
 
