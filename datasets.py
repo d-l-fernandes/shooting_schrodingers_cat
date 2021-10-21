@@ -349,13 +349,13 @@ class DoubleWellLeft(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., 0.]),
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., -5.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., 0.]),
-                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., -5.]),
+                                                  scale_tril=torch.eye(2)).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
@@ -377,13 +377,13 @@ class DoubleWellRight(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 0.]),
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 0.]),
-                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
+                                                  scale_tril=torch.eye(2)).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \

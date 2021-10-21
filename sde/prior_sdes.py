@@ -26,7 +26,7 @@ class BasePriorSDE:
         raise NotImplementedError
 
     @staticmethod
-    def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
+    def transition_density(x: Tensor, delta_t: Tensor, forward: bool) -> distributions.Distribution:
         raise NotImplementedError
 
 
@@ -44,7 +44,7 @@ class Brownian(BasePriorSDE):
         # return torch.ones_like(x, device=x.device)
 
     @staticmethod
-    def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
+    def transition_density(x: Tensor, delta_t: Tensor, forward: bool) -> distributions.Distribution:
         if len(delta_t.shape) == 0:
             scale_tril = torch.diag_embed(torch.ones_like(x) * torch.sqrt(delta_t))
             return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
@@ -62,9 +62,7 @@ class DoubleWell(BasePriorSDE):
             raise RuntimeError("Double well only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        grad_u = functional.jacobian(
-            lambda x_grad: self.u(x_grad).sum(), x, create_graph=True, vectorize=True)
-        return -grad_u
+        return self.u(x)
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.diag_embed(torch.ones_like(x, device=x.device))
@@ -72,16 +70,18 @@ class DoubleWell(BasePriorSDE):
 
     @staticmethod
     def u(x: Tensor) -> Tensor:
-        x_term = x[:, 0] ** 2
-        y_term = (x[:, 1] + 5) ** 2
-        exp_term = torch.exp(-(x[:, 0]**2 + x[:, 1]**2))
-        return x_term + y_term + exp_term
+        y = 5 * torch.cat((-x[..., 1].unsqueeze(-1), x[..., 0].unsqueeze(-1)), dim=-1)
+        return y
 
-    @staticmethod
-    def transition_density(x: Tensor, delta_t: Tensor) -> distributions.Distribution:
+    def transition_density(self, x: Tensor, delta_t: Tensor, forward: bool) -> distributions.Distribution:
         if len(delta_t.shape) == 0:
+            if forward:
+                scale = 1.
+            else:
+                scale = -1.
             scale_tril = torch.diag_embed(torch.ones_like(x) * torch.sqrt(delta_t))
-            return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
+            return distributions.MultivariateNormal(
+                loc=(x + scale * self.u(x) * torch.sqrt(delta_t)), scale_tril=scale_tril)
         else:
             # TODO implement general delta_t
             pass
