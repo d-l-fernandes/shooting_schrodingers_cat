@@ -19,10 +19,11 @@ FLAGS = flags.FLAGS
 
 
 class BaseDiffusion(torch.nn.Module):
-    def __init__(self, input_size: int, output_size: int):
+    def __init__(self, input_size: int, output_size: int, final_t: float):
         super().__init__()
         self.input_size = input_size
         self.output_size = output_size
+        self.final_t = final_t
 
     @staticmethod
     def init_weights(m):
@@ -32,13 +33,24 @@ class BaseDiffusion(torch.nn.Module):
 
 
 class Scalar(BaseDiffusion):
-    def __init__(self, input_size: int, output_size: int):
-        super().__init__(input_size, output_size)
+    def __init__(self, input_size: int, output_size: int, final_t: float):
+        super().__init__(input_size, output_size, final_t)
         # self.constant = np.sqrt(2)
         self.constant = np.sqrt(1.)
+        self.g_min = np.sqrt(0.5)
+        self.g_max = np.sqrt(2.)
+        g_diff = self.g_max - self.g_min
+        self.gamma_t = \
+            lambda t: (self.g_min + 2 * g_diff * t / self.final_t) * (t < self.final_t / 2) + \
+                      ((2 * self.g_max - self.g_min) - 2 * g_diff * t / self.final_t) * (t >= self.final_t / 2)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        return torch.diag_embed(torch.ones_like(x, device=x.device) * self.constant)
+        # return torch.diag_embed(torch.ones_like(x, device=x.device) * self.constant)
+        gamma = self.gamma_t(t).to(x.device)
+        if len(gamma.shape) == 0:
+            return torch.diag_embed(torch.ones_like(x, device=x.device) * gamma)
+        else:
+            return torch.diag_embed(torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma))
         # return torch.ones_like(x, device=x.device) * self.constant
 
 

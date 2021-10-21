@@ -10,6 +10,7 @@ from absl import flags
 from matplotlib.figure import Figure
 import geomloss
 import torchsde
+import functorch
 
 from sde import drifts, diffusions, prior_sdes, variational, priors
 from weak_solver.sdeint import integrate
@@ -72,15 +73,20 @@ class Model(pl.LightningModule):
         self.wasserstein_loss = geomloss.SamplesLoss()
         self.save_hyperparameters()
 
+        # Time
+        self.final_t = FLAGS.delta_t * FLAGS.num_steps
+        self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
+                                          device=self.device)
+
         # SDE
         self.drift_forward: drifts.BaseDrift = \
             drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
         self.diffusion_forward: diffusions.BaseDiffusion = \
-            diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims)
+            diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims, self.final_t)
         self.drift_backward: drifts.BaseDrift = \
             drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
         self.diffusion_backward: diffusions.BaseDiffusion = \
-            diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims)
+            diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims, self.final_t)
 
         if FLAGS.same_diffusion:
             self.diffusion_backward = self.diffusion_forward
@@ -90,6 +96,7 @@ class Model(pl.LightningModule):
 
         # Prior
         self.prior_sde: prior_sdes.BasePriorSDE = prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
+        self.prior_sde.g = lambda t, x: self.diffusion_forward(x, t)
 
         # Variational q
         self.q: variational.BaseVariational \
@@ -98,10 +105,6 @@ class Model(pl.LightningModule):
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
         self.p: priors.BasePrior \
             = priors.priors_dict["gaussian"](observed_dims, observed_dims)
-
-        # Delta_t
-        self.time_values = torch.linspace(0, FLAGS.delta_t * FLAGS.num_steps, FLAGS.num_steps+1,
-                                          device=self.device)
 
         self.solve_sde = None
         self.optim_sde = None
@@ -124,7 +127,8 @@ class Model(pl.LightningModule):
             self.optim_sde = self.forward_sde
             self.data_type = "data"
 
-    def solve(self, x_0: Tensor, sde, time_values) -> Tensor:
+    @staticmethod
+    def solve(x_0: Tensor, sde, time_values) -> Tensor:
         # xs = torchsde.sdeint(sde, x_0, time_values, method="euler", adaptive=False, dt=FLAGS.delta_t)
         xs = integrate(sde, x_0, time_values)
         return xs
@@ -151,7 +155,8 @@ class Model(pl.LightningModule):
 
         # Variational KSD
         transition_density = self.prior_sde.transition_density(s_is,
-                                                               torch.tensor(FLAGS.delta_t, device=self.device))
+                                                               torch.tensor(FLAGS.delta_t, device=self.device),
+                                                               self.forward)
         grad_transition = functional.jacobian(
             lambda x: transition_density.log_prob(x).sum(), xs[1:], create_graph=True, vectorize=True)
         ksd = kernel.stein_discrepancy(xs[1:], grad_transition)
