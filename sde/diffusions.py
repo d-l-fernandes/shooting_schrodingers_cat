@@ -37,8 +37,8 @@ class Scalar(BaseDiffusion):
         super().__init__(input_size, output_size, final_t)
         # self.constant = np.sqrt(2)
         self.constant = np.sqrt(1.)
-        self.g_min = np.sqrt(0.5)
-        self.g_max = np.sqrt(2.)
+        self.g_max = np.sqrt(1.)
+        self.g_min = np.sqrt(1.)
         g_diff = self.g_max - self.g_min
         self.gamma_t = \
             lambda t: (self.g_min + 2 * g_diff * t / self.final_t) * (t < self.final_t / 2) + \
