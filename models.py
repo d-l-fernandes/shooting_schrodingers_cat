@@ -14,12 +14,15 @@ import functorch
 
 from sde import drifts, diffusions, prior_sdes, variational, priors
 from weak_solver.sdeint import integrate
+from weak_solver.noise import rossler_noise
+from weak_solver.step_funs import rossler_step
 from stein import kernel
 
 
 flags.DEFINE_integer("num_steps", 20, "Number of time steps", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("batch_repeats", 1, "Optimizer steps per batch", lower_bound=1)
+flags.DEFINE_integer("num_samples", 3, "Number of one-step_samples", lower_bound=1)
 
 flags.DEFINE_float("delta_t", 0.01, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
@@ -136,35 +139,50 @@ class Model(pl.LightningModule):
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
-        xs = torch.empty_like(ys, device=self.device)
+        q_prob: torch.distributions.Distribution = self.q(ys[:-1])
+        s_is = q_prob.sample((FLAGS.num_samples,))
 
-        q_prob = self.q(ys[:-1])
-        s_is = q_prob.sample()
-        xs[0] = s_is[0]
+        xs = torch.empty_like(s_is, device=self.device)
 
+        time_values = self.time_values.to(ys.device)
+        noise_generator = rossler_noise(ys.shape[-1], (xs.shape[0],) + ys.shape[1:-1], ys.device)
         for i in range(ys.shape[0]-1):
-            xs[i+1] = self.solve(s_is[i], sde, self.time_values[i:i+2].to(ys.device))[-1]
+            t_i = time_values[i]
+            delta_t = time_values[i+1] - time_values[i]
+            beta, chi = noise_generator(delta_t)
+            xs[:, i] = functorch.vmap(
+                lambda s_map, beta_map, chi_map: rossler_step(s_map[i], t_i, beta_map, chi_map, delta_t, sde)
+            )(s_is, beta, chi)
+            # xs[i+1] = functorch.vmap(
+            #     lambda s_map: self.solve(s_is[i], sde, time_values[i:i+2])[-1])(s_is)
+        # self.solve(s_is[i], sde, self.time_values[i:i+2].to(ys.device))[-1]
 
         # Likelihood
-        likelihood_dist = self.likelihood(xs[1:], torch.tensor(FLAGS.delta_t), sde.g(self.time_values[1:], xs[1:]))
-        likelihood = likelihood_dist.log_prob(ys[1:]).mean(-1).sum()
+        likelihood_dist = self.likelihood(xs)
+        likelihood = likelihood_dist.log_prob(ys[1:]).mean()
 
         # Variational KL
-        prior_dist = self.p(ys[:-1], torch.tensor(FLAGS.delta_t), sde.g(self.time_values[:-1], ys[:-1]))
-        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).mean(-1).sum()
+        prior_dist = self.p(ys[:-1])
+        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).mean()
 
         # Variational KSD
         transition_density = self.prior_sde.transition_density(s_is,
                                                                torch.tensor(FLAGS.delta_t, device=self.device),
                                                                self.forward)
-        grad_transition = functional.jacobian(
-            lambda x: transition_density.log_prob(x).sum(), xs[1:], create_graph=True, vectorize=True)
-        ksd = kernel.stein_discrepancy(xs[1:], grad_transition)
+        grad_transition = functorch.grad(
+            lambda x: transition_density.log_prob(x).sum()
+        )(xs)
+        ksd = functorch.vmap(
+            lambda x_map, grad_map:
+            kernel.stein_discrepancy(x_map.permute(1, 0, 2), grad_map.permute(1, 0, 2)), 2)(xs, grad_transition).mean()
 
         #  print(likelihood)
         #  print(variational_kl)
         #  print(ksd)
         # ksd = 0
+        self.log("likelihood", likelihood)
+        self.log("variational_kl", variational_kl)
+        self.log("ksd", ksd)
         return -(likelihood - variational_kl - ksd)
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
@@ -186,7 +204,7 @@ class Model(pl.LightningModule):
         x = batch[self.data_type]
 
         with torch.no_grad():
-            xs = self.solve(x, self.solve_sde, self.time_values).detach()
+            xs = self.solve(x, self.solve_sde, self.time_values)
 
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad(set_to_none=True)

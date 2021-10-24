@@ -1,15 +1,17 @@
 import torch
+import torch.autograd.functional as functional
 
 Tensor = torch.Tensor
 
 
 def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
-    pairwise_dists = torch.cdist(theta, theta)
+    # pairwise_dists = torch.cdist(theta, theta)
     diffs = theta.unsqueeze(2) - theta.unsqueeze(1)
+    pairwise_dists = torch.einsum("...a,...a->...", diffs, diffs)
 
     h = torch.flatten(pairwise_dists, 1, -1).median(dim=1)[0]
     # h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))[:, None, None]
-    h = torch.sqrt(h)[:, None, None]
+    h = torch.sqrt(0 * h + 0.01)[:, None, None]
     # h = pairwise_dists.median()
     # h = torch.sqrt(0.0001 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))
 
@@ -30,4 +32,4 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
 
     u = first_term + second_term + third_term + trace_dx2d2lxy
 
-    return torch.abs(torch.flatten(u, 1, -1).mean(-1).sum())
+    return (1 / theta.shape[1]**2 * torch.flatten(u, 1, -1).sum(-1)).sum()

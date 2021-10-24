@@ -18,8 +18,8 @@ def stochastic_integrate(sde, y0: torch.Tensor, ts, step, noise):
     ys[0] = y0
     for i in range(ts.shape[0]-1):
         delta_t = ts[i+1] - ts[i]
-        step_noise = noise(delta_t)
-        next_y = step(ys[i], ts[i], step_noise, delta_t, sde)
+        beta, chi = noise(delta_t)
+        next_y = step(ys[i], ts[i], beta, chi, delta_t, sde)
         ys = torch.cat((ys, next_y[None]), 0)
 
     return ys

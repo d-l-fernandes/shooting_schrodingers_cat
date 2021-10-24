@@ -4,11 +4,10 @@ import torch
 
 def rossler_step(x: torch.Tensor,
                  t: float,
-                 noise: Tuple[torch.Tensor, torch.Tensor],
+                 beta: torch.Tensor,
+                 chi: torch.Tensor,
                  delta_t: float,
                  sde) -> torch.tensor:
-    beta, chi = noise
-
     drift_1 = sde.f(t, x)
     diffusion_1 = sde.g(t, x)
 
@@ -18,15 +17,19 @@ def rossler_step(x: torch.Tensor,
 
     diff_1_chi = torch.einsum("abc,acd->abd", diffusion_1, chi).permute(2, 0, 1)
 
-    diff_1_chi_skip = torch.empty((chi.shape[0], chi.shape[-1], chi.shape[-1], chi.shape[-1]), device=x.device)
+    diff_1_chi_skip = torch.einsum(
+        "abc,acd->dab",
+        torch.cat((diffusion_1[:, :, :0], diffusion_1[:, :, 0 + 1:]), dim=-1),
+        torch.cat((chi[:, :0, 0:0 + 1], chi[:, 0 + 1:, 0:0 + 1]), dim=-2)
+    )
 
-    mask = torch.empty_like(chi, dtype=torch.bool, device=x.device).fill_(False)
-    for i in range(chi.shape[-1]):
-        mask[:, i] = True
-        chi_skip = chi.masked_fill(mask, 0.)
-        diff_1_chi_skip[:, :, i] = torch.einsum("abc,acd->abd", diffusion_1, chi_skip)
-        mask[:, i] = False
-    diff_1_chi_skip = torch.diagonal(diff_1_chi_skip, dim1=-2, dim2=-1).permute(2, 0, 1)
+    for i in range(1, chi.shape[-1]):
+        diff_1_chi_skip_step = torch.einsum(
+            "abc,acd->dab",
+            torch.cat((diffusion_1[:, :, :i], diffusion_1[:, :, i+1:]), dim=-1),
+            torch.cat((chi[:, :i, i:i+1], chi[:, i+1:, i:i+1]), dim=-2)
+        )
+        diff_1_chi_skip = torch.cat((diff_1_chi_skip, diff_1_chi_skip_step), 0)
 
     x_2_tilde_n = x[None] + drift_1[None] * delta_t + diff_1_chi
     x_3_tilde_n = x[None] + drift_1[None] * delta_t - diff_1_chi
