@@ -30,7 +30,7 @@ class Gaussian(BasePrior):
         super().__init__(input_size, output_size)
         self.sigma = FLAGS.sigma
 
-    def forward(self, x: Tensor, time_values: Tensor, diffusions: Tensor) -> distributions.Distribution:
+    def forward(self, x: Tensor) -> distributions.Distribution:
         return distributions.MultivariateNormal(loc=x, scale_tril=torch.diag_embed(torch.ones_like(x) * self.sigma))
 
 

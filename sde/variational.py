@@ -36,7 +36,7 @@ class Gaussian(BaseVariational):
         out = self.std_nn(self.nn(x))
         out = out.reshape(out.shape[:-1] + (self.output_size,) + (self.output_size,))
         diag = torch.diagonal(out, dim1=-1, dim2=-2)
-        out = out - torch.diag_embed(diag) + (torch.diag_embed(functional.softplus(diag)))
+        out = out - torch.diag_embed(diag) + (torch.diag_embed(functional.softplus(diag) + 1e-5))
         return distributions.MultivariateNormal(loc=mean, scale_tril=out.tril())
 
 
