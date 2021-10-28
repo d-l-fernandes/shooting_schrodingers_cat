@@ -3,7 +3,6 @@ python main.py \
   --drift=nn_general \
   --diffusion=scalar \
   --dataset=toy_experiment_blobs_3d \
-  --dims=3 \
   --prior=gaussian \
   --prior_sde=brownian \
   --prior_dist=gaussian \
@@ -14,5 +13,5 @@ python main.py \
   --num_steps=10 \
   --delta_t=0.05 \
   --num_iter=50 \
-  --batch_repeats=1 \
-  --sigma=0.00001 \
+  --sigma=0.001 \
+  --dims=3 \
