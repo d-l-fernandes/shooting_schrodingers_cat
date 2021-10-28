@@ -1,8 +1,6 @@
 import torch
 from torch import distributions
-import functorch
 from absl import flags
-import math
 
 Tensor = torch.Tensor
 
@@ -26,8 +24,7 @@ class BasePriorSDE:
     def g(self, t: Tensor, x: Tensor) -> Tensor:
         raise NotImplementedError
 
-    @staticmethod
-    def transition_density(x: Tensor, delta_t: Tensor, forward: bool) -> distributions.Distribution:
+    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
         raise NotImplementedError
 
 
@@ -36,22 +33,18 @@ class Brownian(BasePriorSDE):
         super().__init__(dims)
         self.noise_type = "diagonal"
         self.sde_type = "ito"
-        self.std_scale = 5.
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.zeros_like(x, device=x.device)
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.std_scale * torch.diag_embed(torch.ones_like(x, device=x.device))
-        # return torch.ones_like(x, device=x.device)
+        return torch.diag_embed(torch.ones_like(x, device=x.device))
 
-    def transition_density(self, x: Tensor, delta_t: Tensor, forward: bool) -> distributions.Distribution:
-        if len(delta_t.shape) == 0:
-            scale_tril = torch.diag_embed(torch.ones_like(x) * torch.sqrt(delta_t) * self.std_scale)
-            return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
-        else:
-            # TODO implement general delta_t
-            pass
+    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
+        delta_ts = ts[1:] - ts[:-1]
+        diffusions = self.g(ts[:-1], x)
+        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
+        return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
 
 
 class Whirlpool(BasePriorSDE):
@@ -59,7 +52,6 @@ class Whirlpool(BasePriorSDE):
         super().__init__(dims)
         self.noise_type = "diagonal"
         self.sde_type = "ito"
-        self.std_scale = 5.
         if dims != 2:
             raise RuntimeError("Double well only applicable to 2D.")
 
@@ -67,26 +59,24 @@ class Whirlpool(BasePriorSDE):
         return self.u(x)
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return torch.diag_embed(torch.ones_like(x, device=x.device) * self.std_scale)
-        # return torch.ones_like(x, device=x.device)
+        return torch.diag_embed(torch.ones_like(x, device=x.device))
 
     @staticmethod
     def u(x: Tensor) -> Tensor:
-        y = 3 * torch.cat((-x[..., 1].unsqueeze(-1), x[..., 0].unsqueeze(-1)), dim=-1)
+        y = 3.5 * torch.cat((-x[..., 1].unsqueeze(-1), x[..., 0].unsqueeze(-1)), dim=-1)
         return y
 
-    def transition_density(self, x: Tensor, delta_t: Tensor, forward: bool) -> distributions.Distribution:
-        if len(delta_t.shape) == 0:
-            if forward:
-                scale = -1.
-            else:
-                scale = 1.
-            scale_tril = torch.diag_embed(torch.ones_like(x) * torch.sqrt(delta_t) * self.std_scale)
-            return distributions.MultivariateNormal(
-                loc=(x + scale * self.u(x) * torch.sqrt(delta_t)), scale_tril=scale_tril)
+    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
+        if forward:
+            scale = -1.
         else:
-            # TODO implement general delta_t
-            pass
+            scale = 1.
+        delta_ts = ts[1:] - ts[:-1]
+        diffusions = self.g(ts[:-1], x)
+        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
+        drifts = torch.einsum("a, a...->a...", delta_ts, self.u(x))
+        return distributions.MultivariateNormal(
+            loc=x + scale * drifts, scale_tril=scale_tril)
 
 
 class SDE:
