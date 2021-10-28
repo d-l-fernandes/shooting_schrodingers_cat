@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from typing import Optional, List, Tuple, Any
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.trainer.supporters import CombinedLoader
+from sklearn import datasets
 
 from models import Output, Model, Metrics
 
@@ -26,6 +27,11 @@ datasets_list = [
                     "toy_experiment_blobs_3d",
                     "double_well_left",
                     "double_well_right",
+                    "s_curve",
+                    "swiss_roll",
+                    "moon",
+                    "circle",
+                    "checker",
 ]
 
 flags.DEFINE_integer("batch_size", 10, "Batch Size.")
@@ -108,6 +114,13 @@ class BaseDataGenerator(LightningDataModule):
         ax_objective.set_yscale("symlog")
         ax_objective.legend(loc=2)
         ax_objective.grid(True)
+        if len(indices) != 0:
+            total_min = np.argmin(wasserstein_total)
+            ax_objective.vlines(total_min, wasserstein_total[total_min], 2 * wasserstein_total[total_min], color="k")
+            ax_objective.annotate(f"{wasserstein_total[total_min]:.3f}",
+                                  xy=(total_min, 2 * wasserstein_total[total_min]),
+                                  xytext=(-3, 3), textcoords="offset points", horizontalalignment="right",
+                                  verticalalignment="bottom")
 
     def plot_2d_to_2d(self, output: Output, model: Model, metrics: Metrics) -> \
             Tuple[List[Figure], List[str]]:
@@ -391,6 +404,177 @@ class DoubleWellRight(BaseDataGenerator):
         return self.plot_2d_to_2d(output, model, metrics)
 
 
+class SCurve(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 1000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+        self.scaling_factor = 4.
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.n_train = self.n_train
+            self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.setup(stage)
+        # Train
+        x, y = datasets.make_s_curve(self.n_train)
+        self.xs_train = torch.tensor(x)[:, [0, 2]]
+        self.xs_train = (self.xs_train - self.xs_train.mean()) / self.xs_train.std() * self.scaling_factor
+        self.xs_train = self.xs_train.float()
+
+        # Test
+        x, y = datasets.make_s_curve(self.n_test)
+        self.xs_test = torch.tensor(x)[:, [0, 2]]
+        self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
+        self.xs_test = self.xs_test.float()
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
+class Swiss(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 1000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+        self.scaling_factor = 4.
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.n_train = self.n_train
+            self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.setup(stage)
+        # Train
+        x, y = datasets.make_swiss_roll(self.n_train)
+        self.xs_train = torch.tensor(x)[:, [0, 2]]
+        self.xs_train = (self.xs_train - self.xs_train.mean()) / self.xs_train.std() * self.scaling_factor
+        self.xs_train = self.xs_train.float()
+
+        # Test
+        x, y = datasets.make_swiss_roll(self.n_test)
+        self.xs_test = torch.tensor(x)[:, [0, 2]]
+        self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
+        self.xs_test = self.xs_test.float()
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
+class Moon(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 1000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+        self.scaling_factor = 4.
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.n_train = self.n_train
+            self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.setup(stage)
+        # Train
+        x, y = datasets.make_moons(self.n_train)
+        self.xs_train = torch.tensor(x)
+        self.xs_train = (self.xs_train - self.xs_train.mean()) / self.xs_train.std() * self.scaling_factor
+        self.xs_train = self.xs_train.float()
+
+        # Test
+        x, y = datasets.make_moons(self.n_test)
+        self.xs_test = torch.tensor(x)
+        self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
+        self.xs_test = self.xs_test.float()
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
+class Circle(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 1000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+        self.scaling_factor = 7.
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.n_train = self.n_train
+            self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.setup(stage)
+        # Train
+        x, y = datasets.make_circles(self.n_train, factor=0.5)
+        self.xs_train = torch.tensor(x) * self.scaling_factor
+        self.xs_train = self.xs_train.float()
+
+        # Test
+        x, y = datasets.make_circles(self.n_test, factor=0.5)
+        self.xs_test = torch.tensor(x) * self.scaling_factor
+        self.xs_test = self.xs_test.float()
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
+class Checker(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 1000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+        self.scaling_factor = 4.
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.n_train = self.n_train
+            self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.setup(stage)
+        # Train
+        x1 = np.random.rand(self.n_train) * 4 - 2
+        x2_ = np.random.rand(self.n_train) - np.random.randint(0, 2, self.n_train) * 2
+        x2 = x2_ + (np.floor(x1) % 2)
+        x = np.concatenate([x1[:, None], x2[:, None]], 1) * 7.5
+        self.xs_train = torch.from_numpy(x).float()
+
+        x_max = np.max(x[:, 0])
+        x_min = np.min(x[:, 0])
+        y_max = np.max(x[:, 1])
+        y_min = np.min(x[:, 1])
+        self.x_lims = [[x_min-1, x_max+1], [y_min-1, y_max+1]]
+
+        # Test
+        x1 = np.random.rand(self.n_test) * 4 - 2
+        x2_ = np.random.rand(self.n_test) - np.random.randint(0, 2, self.n_test) * 2
+        x2 = x2_ + (np.floor(x1) % 2)
+        x = np.concatenate([x1[:, None], x2[:, None]], 1) * 7.5
+        self.xs_test = torch.from_numpy(x).float()
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
 datasets_dict = {
     "gaussian": Gaussian,
     # Experiments
@@ -398,4 +582,9 @@ datasets_dict = {
     "toy_experiment_blobs_3d": Blobs3D,
     "double_well_left": DoubleWellLeft,
     "double_well_right": DoubleWellRight,
+    "s_curve": SCurve,
+    "swiss_roll": Swiss,
+    "moon": Moon,
+    "circle": Circle,
+    "checker": Checker
 }
