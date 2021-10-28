@@ -6,7 +6,7 @@ from .noise import rossler_noise
 def integrate(sde, y0, ts, method='rossler'):
     if method == 'rossler':
         step = rossler_step
-        noise = rossler_noise(y0.shape[-1], y0.shape[0], y0.device)
+        noise = rossler_noise(y0.shape[-1], y0.shape[:-1], y0.device)
     else:
         raise ValueError('Unknown method: {}'.format(method))
 

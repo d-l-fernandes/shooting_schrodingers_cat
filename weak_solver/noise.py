@@ -1,15 +1,12 @@
-from typing import Callable, Tuple, Union
+from typing import Callable, Tuple
 import torch
 import math
 
 
-def rossler_noise(noise_dims: int, batch_dims: Union[Tuple[int], int], device) \
+def rossler_noise(noise_dims: int, batch_dims: Tuple[int], device) \
         -> Callable[[torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
 
-    if type(batch_dims) == int:
-        size = (batch_dims, noise_dims)
-    else:
-        size = batch_dims + (noise_dims, )
+    size = batch_dims + (noise_dims, )
 
     def generate_noise(delta_t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
 

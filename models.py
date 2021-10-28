@@ -5,26 +5,23 @@ from typing import NamedTuple, List, Union
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
-import torch.autograd.functional as functional
+import torch.autograd.functional as autograd
 from absl import flags
 from matplotlib.figure import Figure
 import geomloss
 import torchsde
-import functorch
 
 from sde import drifts, diffusions, prior_sdes, variational, priors
 from weak_solver.sdeint import integrate
-from weak_solver.noise import rossler_noise
-from weak_solver.step_funs import rossler_step
 from stein import kernel
 
 
-flags.DEFINE_integer("num_steps", 20, "Number of time steps", lower_bound=1)
+flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("batch_repeats", 1, "Optimizer steps per batch", lower_bound=1)
-flags.DEFINE_integer("num_samples", 3, "Number of one-step_samples", lower_bound=1)
+flags.DEFINE_integer("num_samples", 11, "Number of one-step_samples", lower_bound=1)
 
-flags.DEFINE_float("delta_t", 0.01, "Time-step size.")
+flags.DEFINE_float("delta_t", 0.05, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 
@@ -80,6 +77,7 @@ class Model(pl.LightningModule):
         self.final_t = FLAGS.delta_t * FLAGS.num_steps
         self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
                                           device=self.device)
+        self.delta_t = torch.tensor(FLAGS.delta_t, device=self.device)
 
         # SDE
         self.drift_forward: drifts.BaseDrift = \
@@ -116,6 +114,9 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
+        # Sigma exponent
+        self.exponent = 2
+
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
             self.solve_sde = self.prior_sde
@@ -144,46 +145,28 @@ class Model(pl.LightningModule):
 
         xs = torch.empty_like(s_is, device=self.device)
 
-        time_values = self.time_values.to(ys.device)
-        noise_generator = rossler_noise(ys.shape[-1], (xs.shape[0],) + ys.shape[1:-1], ys.device)
         for i in range(ys.shape[0]-1):
-            t_i = time_values[i]
-            delta_t = time_values[i+1] - time_values[i]
-            beta, chi = noise_generator(delta_t)
-            xs[:, i] = functorch.vmap(
-                lambda s_map, beta_map, chi_map: rossler_step(s_map[i], t_i, beta_map, chi_map, delta_t, sde)
-            )(s_is, beta, chi)
-            # xs[i+1] = functorch.vmap(
-            #     lambda s_map: self.solve(s_is[i], sde, time_values[i:i+2])[-1])(s_is)
-        # self.solve(s_is[i], sde, self.time_values[i:i+2].to(ys.device))[-1]
+            xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
 
         # Likelihood
         likelihood_dist = self.likelihood(xs)
-        likelihood = likelihood_dist.log_prob(ys[1:]).mean()
+        likelihood = likelihood_dist.log_prob(ys[1:]).mean(0)
 
         # Variational KL
         prior_dist = self.p(ys[:-1])
-        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).mean()
+        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
 
         # Variational KSD
-        transition_density = self.prior_sde.transition_density(s_is,
-                                                               torch.tensor(FLAGS.delta_t, device=self.device),
-                                                               self.forward)
-        grad_transition = functorch.grad(
-            lambda x: transition_density.log_prob(x).sum()
-        )(xs)
-        ksd = functorch.vmap(
-            lambda x_map, grad_map:
-            kernel.stein_discrepancy(x_map.permute(1, 0, 2), grad_map.permute(1, 0, 2)), 2)(xs, grad_transition).mean()
+        s_is = s_is.permute(1, 2, 0, 3)
+        xs = xs.permute(1, 2, 0, 3)
+        transition_density = self.prior_sde.transition_density(self.time_values.to(ys.device), s_is, self.forward)
+        grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
+        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, self.delta_t, self.exponent)
 
-        #  print(likelihood)
-        #  print(variational_kl)
-        #  print(ksd)
-        # ksd = 0
-        self.log("likelihood", likelihood)
-        self.log("variational_kl", variational_kl)
-        self.log("ksd", ksd)
-        return -(likelihood - variational_kl - ksd)
+        self.log("likelihood", likelihood.mean(-1).sum())
+        self.log("variational_kl", variational_kl.mean(-1).sum())
+        self.log("ksd", ksd.mean(-1).sum())
+        return -(likelihood - variational_kl - ksd).mean(-1).sum()
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         z_backward = self.solve(x_data, self.backward_sde, self.time_values)
@@ -219,10 +202,12 @@ class Model(pl.LightningModule):
             self.forward = not self.forward
             if self.first:
                 self.first = False
-        # torch.cuda.empty_cache()
-        # gc.collect()
 
-        self.get_drift_diffusion(self.first, self.forward)
+            self.get_drift_diffusion(self.first, self.forward)
+            torch.cuda.empty_cache()
+            gc.collect()
+        if (self.current_epoch+1) % (FLAGS.num_iter*2) == 0:
+            self.exponent /= 2
 
     def validation_step(self, batch, batch_idx):
         x_prior = batch["prior"]
@@ -258,11 +243,13 @@ class Model(pl.LightningModule):
         checkpoint["metrics"] = self.metrics
         checkpoint["first"] = self.first
         checkpoint["forward"] = self.forward
+        checkpoint["exponent"] = self.exponent
 
     def on_load_checkpoint(self, checkpoint):
         self.metrics = checkpoint["metrics"]
         self.first = checkpoint["first"]
         self.forward = checkpoint["forward"]
+        self.exponent = checkpoint["exponent"]
 
         self.get_drift_diffusion(self.first, self.forward)
 
