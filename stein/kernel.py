@@ -4,7 +4,18 @@ import numpy as np
 Tensor = torch.Tensor
 
 
-def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, exponent: float) -> Tensor:
+def exponential_decay_base_2(ipfp_iteration):
+    return 2 / 2**ipfp_iteration
+
+
+def exponential_decay_min_1(ipfp_iteration):
+    return 1. * np.exp(-ipfp_iteration) + 1
+
+
+schedule = exponential_decay_base_2
+
+
+def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int) -> Tensor:
     pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) * delta_t
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) * delta_t**0.5
 
@@ -14,7 +25,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1)
     # h = torch.sqrt(0.0001 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))
 
-    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**exponent
+    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**schedule(ipfp_iteration)
 
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)

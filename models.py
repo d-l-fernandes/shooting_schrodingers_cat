@@ -115,7 +115,7 @@ class Model(pl.LightningModule):
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
         # Sigma exponent
-        self.exponent = 2
+        self.ipfp_iteration = 0
 
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
@@ -161,7 +161,7 @@ class Model(pl.LightningModule):
         xs = xs.permute(1, 2, 0, 3)
         transition_density = self.prior_sde.transition_density(self.time_values.to(ys.device), s_is, self.forward)
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
-        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, self.delta_t, self.exponent)
+        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, self.delta_t, self.ipfp_iteration)
 
         self.log("likelihood", likelihood.mean(-1).sum())
         self.log("variational_kl", variational_kl.mean(-1).sum())
@@ -207,7 +207,7 @@ class Model(pl.LightningModule):
             torch.cuda.empty_cache()
             gc.collect()
         if (self.current_epoch+1) % (FLAGS.num_iter*2) == 0:
-            self.exponent /= 2
+            self.ipfp_iteration += 1
 
     def validation_step(self, batch, batch_idx):
         x_prior = batch["prior"]
@@ -243,13 +243,13 @@ class Model(pl.LightningModule):
         checkpoint["metrics"] = self.metrics
         checkpoint["first"] = self.first
         checkpoint["forward"] = self.forward
-        checkpoint["exponent"] = self.exponent
+        checkpoint["ipfp_iteration"] = self.ipfp_iteration
 
     def on_load_checkpoint(self, checkpoint):
         self.metrics = checkpoint["metrics"]
         self.first = checkpoint["first"]
         self.forward = checkpoint["forward"]
-        self.exponent = checkpoint["exponent"]
+        self.ipfp_iteration = checkpoint["ipfp_iteration"]
 
         self.get_drift_diffusion(self.first, self.forward)
 
