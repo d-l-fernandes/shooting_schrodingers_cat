@@ -356,19 +356,19 @@ class DoubleWellLeft(BaseDataGenerator):
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
+        self.x_lims = [[-6, 6], [-6, 6]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., -5.]),
-                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-3., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-5., -5.]),
-                                                  scale_tril=torch.eye(2)).sample((self.n_test,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-3., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
@@ -384,19 +384,19 @@ class DoubleWellRight(BaseDataGenerator):
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
+        self.x_lims = [[-6, 6], [-6, 6]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
-                                                  scale_tril=torch.eye(2)).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([3., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
-                                                  scale_tril=torch.eye(2)).sample((self.n_test,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([3., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
