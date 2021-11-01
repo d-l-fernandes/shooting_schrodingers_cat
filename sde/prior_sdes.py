@@ -10,7 +10,7 @@ flags.DEFINE_enum("prior_sde", "brownian",
                       "brownian",
                       "whirlpool",
                       "hill"
-                   ],
+                  ],
                   "Prior to use.")
 FLAGS = flags.FLAGS
 
@@ -86,31 +86,33 @@ class Hill(BasePriorSDE):
         super().__init__(dims)
         self.noise_type = "diagonal"
         self.sde_type = "ito"
+        self.fac = 1.
+        self.delta = 0.35
         if dims != 2:
             raise RuntimeError("Double well only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.grad_u(x)
+        return self.grad_u(x[..., 0], x[..., 1])
 
     def g(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.diag_embed(torch.ones_like(x, device=x.device))
 
-    @staticmethod
-    def u(x: Tensor) -> Tensor:
-        return 1000 * torch.exp(-(x**2).sum(-1) / (2 * 2.**2))
+    def u(self, x: Tensor, y: Tensor) -> Tensor:
+        # return 10 * torch.exp(-(x**2).sum(-1) / (2 * 1.**2))
+        z = (5 / 2.0) * (x ** 2 - 1 ** 2) ** 2 + y ** 2 + self.fac \
+            * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta
+        return z
 
-    def grad_u(self, x: Tensor) -> Tensor:
-        return jacobian(lambda x_grad: self.u(x).sum(), x)
+    def grad_u(self, x: Tensor, y: Tensor) -> Tensor:
+        u = -(10 * x * (x ** 2 - 1)) + self.fac * 2 * x * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta ** 2
+        v = -(2 * y) + self.fac * 2 * y * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta ** 2
+        return torch.cat((u.unsqueeze(-1), v.unsqueeze(-1)), dim=-1)
 
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
-        # if forward:
-        #     scale = -1.
-        # else:
-        #     scale = 1.
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
         scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
-        drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x))
+        drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x[..., 0], x[..., 1]))
         return distributions.MultivariateNormal(
             loc=x + drifts, scale_tril=scale_tril)
 
