@@ -1,7 +1,7 @@
 cd ..
 hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --gpus '"device=0,1"' dlf28/pytorch_lightning\
 	python main.py \
-	  --drift=score_network \
+	  --drift=nn_general \
 	  --diffusion=scalar \
     --dataset=double_well_right \
     --prior=double_well_left \
@@ -15,4 +15,5 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --gpus '"
 	  --delta_t=0.05 \
 	  --num_iter=50 \
 	  --sigma=0.001 \
+	  --max_gamma=0.5 \
 	  --gpus=2

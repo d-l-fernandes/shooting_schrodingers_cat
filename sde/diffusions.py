@@ -15,6 +15,8 @@ flags.DEFINE_enum("diffusion", "nn_space_diagonal",
                    "nn_general_diagonal", "nn_general", "nn_general_mnist"
                    ],
                   "Diffusion to use.")
+flags.DEFINE_float("min_gamma", 0.1, lower_bound=0., help="Minimum diffusion.")
+flags.DEFINE_float("max_gamma", np.sqrt(2.), lower_bound=0., help="Maximum diffusion.")
 FLAGS = flags.FLAGS
 
 
@@ -37,8 +39,8 @@ class Scalar(BaseDiffusion):
         super().__init__(input_size, output_size, final_t)
         # self.constant = np.sqrt(2)
         self.constant = np.sqrt(1.)
-        self.g_min = 0.1
-        self.g_max = np.sqrt(2.)
+        self.g_min = FLAGS.min_gamma
+        self.g_max = FLAGS.max_gamma
         g_diff = self.g_max - self.g_min
         self.gamma_t = \
             lambda t: (self.g_min + 2 * g_diff * t / self.final_t) * (t < self.final_t / 2) + \
