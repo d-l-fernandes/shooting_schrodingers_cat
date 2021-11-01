@@ -12,7 +12,11 @@ def exponential_decay_min_1(ipfp_iteration):
     return 1. * np.exp(-ipfp_iteration) + 1
 
 
-schedule = exponential_decay_base_2
+def constant(ipfp_iteration):
+    return 2.
+
+
+schedule = constant
 
 
 def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int) -> Tensor:
