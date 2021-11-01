@@ -84,7 +84,7 @@ class NNGeneral(BaseDrift):
         self.nn = torch.nn.Sequential(
             torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            # torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, self.output_size)
         )
 
@@ -145,7 +145,7 @@ class ScoreNetwork(torch.nn.Module):
         if len(t.shape) != len(x.shape):
             t = (torch.ones_like(x, device=x.device) * t)[..., 0:1]
 
-        temb = get_timestep_embedding(t.to(x.device), self.temb_dim)
+        temb = get_timestep_embedding(t, self.temb_dim)
         temb = self.t_encoder(temb)
         xemb = self.x_encoder(x)
         h = torch.cat([xemb, temb], -1)

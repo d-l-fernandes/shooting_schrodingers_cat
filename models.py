@@ -19,7 +19,7 @@ from stein import kernel
 flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("batch_repeats", 1, "Optimizer steps per batch", lower_bound=1)
-flags.DEFINE_integer("num_samples", 11, "Number of one-step_samples", lower_bound=1)
+flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
 
 flags.DEFINE_float("delta_t", 0.05, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
@@ -133,7 +133,7 @@ class Model(pl.LightningModule):
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values) -> Tensor:
-        # xs = torchsde.sdeint(sde, x_0, time_values, method="euler", adaptive=False, dt=FLAGS.delta_t)
+        # xs = torchsde.sdeint(sde, x_0, time_values, method="srk", adaptive=False, dt=FLAGS.delta_t)
         xs = integrate(sde, x_0, time_values)
         return xs
 

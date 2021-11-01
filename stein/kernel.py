@@ -24,10 +24,8 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) * delta_t**0.5
 
     h = torch.flatten(pairwise_dists, -2, -1).median(dim=-1)[0].detach()
-    # h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))[:, None, None]
-    h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[-2] + 1).to(theta.device))).unsqueeze(-1).unsqueeze(-1)
+    h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
     # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1)
-    # h = torch.sqrt(0.0001 * h / torch.log(torch.tensor(theta.shape[1] + 1)).to(theta.device))
 
     kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**schedule(ipfp_iteration)
 
@@ -45,7 +43,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
 
     u = first_term + second_term + third_term + trace_dx2d2lxy
 
-    # return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
-    u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
+    return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
+    # u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
 
-    return 1 / (theta.shape[1] * (theta.shape[1] - 1)) * torch.flatten(u, -2, -1).sum(-1)
+    # return 1 / (theta.shape[1] * (theta.shape[1] - 1)) * torch.abs(torch.flatten(u, -2, -1).sum(-1))

@@ -1,7 +1,6 @@
 import torch
 from torch import distributions
 from absl import flags
-from torch.autograd.functional import jacobian
 
 Tensor = torch.Tensor
 
@@ -23,8 +22,9 @@ class BasePriorSDE:
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         raise NotImplementedError
 
-    def g(self, t: Tensor, x: Tensor) -> Tensor:
-        raise NotImplementedError
+    @staticmethod
+    def g(t: Tensor, x: Tensor) -> Tensor:
+        return torch.diag_embed(torch.ones_like(x, device=x.device))
 
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
         raise NotImplementedError
@@ -38,9 +38,6 @@ class Brownian(BasePriorSDE):
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.zeros_like(x, device=x.device)
-
-    def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return torch.diag_embed(torch.ones_like(x, device=x.device))
 
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
         delta_ts = ts[1:] - ts[:-1]
@@ -59,9 +56,6 @@ class Whirlpool(BasePriorSDE):
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return self.u(x)
-
-    def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return torch.diag_embed(torch.ones_like(x, device=x.device))
 
     @staticmethod
     def u(x: Tensor) -> Tensor:
@@ -93,9 +87,6 @@ class Hill(BasePriorSDE):
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return self.grad_u(x[..., 0], x[..., 1])
-
-    def g(self, t: Tensor, x: Tensor) -> Tensor:
-        return torch.diag_embed(torch.ones_like(x, device=x.device))
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
         # return 10 * torch.exp(-(x**2).sum(-1) / (2 * 1.**2))

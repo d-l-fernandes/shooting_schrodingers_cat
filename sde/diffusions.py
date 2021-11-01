@@ -37,8 +37,6 @@ class BaseDiffusion(torch.nn.Module):
 class Scalar(BaseDiffusion):
     def __init__(self, input_size: int, output_size: int, final_t: float):
         super().__init__(input_size, output_size, final_t)
-        # self.constant = np.sqrt(2)
-        self.constant = np.sqrt(1.)
         self.g_min = FLAGS.min_gamma
         self.g_max = FLAGS.max_gamma
         g_diff = self.g_max - self.g_min
@@ -47,7 +45,7 @@ class Scalar(BaseDiffusion):
                       ((2 * self.g_max - self.g_min) - 2 * g_diff * t / self.final_t) * (t >= self.final_t / 2)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        gamma = self.gamma_t(t).to(x.device)
+        gamma = self.gamma_t(t)
         if len(gamma.shape) == 0:
             return torch.diag_embed(torch.ones_like(x, device=x.device) * gamma)
         else:
