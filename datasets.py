@@ -16,6 +16,7 @@ from pytorch_lightning.trainer.supporters import CombinedLoader
 from sklearn import datasets
 
 from models import Output, Model, Metrics
+from sde import prior_sdes
 
 Tensor = torch.Tensor
 
@@ -77,20 +78,20 @@ class BaseDataGenerator(LightningDataModule):
         if self.prior_dataset is not None:
             loaders = {
                 "prior": DataLoader(
-                    self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=4),
-                "data": DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=4)}
+                    self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=0, pin_memory=True),
+                "data": DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0, pin_memory=True)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
-            return DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=4)
+            return DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0, pin_memory=True)
 
     def val_dataloader(self):
         if self.prior_dataset is not None:
             loaders = {
-                "prior": DataLoader(self.prior_dataset.xs_test, self.batch_size, num_workers=4),
-                "data": DataLoader(self.xs_test, self.batch_size, num_workers=4)}
+                "prior": DataLoader(self.prior_dataset.xs_test, self.batch_size, num_workers=0, pin_memory=True),
+                "data": DataLoader(self.xs_test, self.batch_size, num_workers=0, pin_memory=True)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
-            return DataLoader(self.xs_test, self.batch_size, num_workers=4)
+            return DataLoader(self.xs_test, self.batch_size, num_workers=0, pin_memory=True)
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
@@ -160,6 +161,18 @@ class BaseDataGenerator(LightningDataModule):
 
             t_values = model.time_values.cpu().detach().numpy()
 
+            if type(model.prior_sde) == prior_sdes.Hill:
+                xx, yy = np.meshgrid(np.linspace(self.x_lims[0][0], self.x_lims[0][1], 100),
+                                     np.linspace(self.x_lims[1][0], self.x_lims[1][1], 100))
+                zz = model.prior_sde.u(
+                    torch.tensor(xx).to(output.z_values_forward.device),
+                    torch.tensor(yy).to(output.z_values_forward.device),
+                ).detach().cpu().numpy()
+                ax_z_1.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
+                ax_z_0.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
+                ax_z_backwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
+                ax_z_forwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
+
             norm = plt.Normalize(t_values.min(), t_values.max())
             ax_z_backwards.scatter(z_values_backward[:, -1, 0], z_values_backward[:, -1, 1],
                                    c=np.ones_like(z_values_backward[:, -1, 0]), cmap="gnuplot", alpha=0.5, marker="x")
@@ -198,7 +211,7 @@ class Gaussian(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 500
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = FLAGS.dims
 
@@ -226,7 +239,7 @@ class Blobs2D(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 500
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
@@ -262,7 +275,7 @@ class Blobs3D(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 500
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 3
 
@@ -352,23 +365,23 @@ class DoubleWellLeft(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 500
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-6, 6], [-6, 6]]
+        self.x_lims = [[-1.5, 1.5], [-1.5, 1.5]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-3., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-3., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
@@ -380,23 +393,23 @@ class DoubleWellRight(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 500
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-6, 6], [-6, 6]]
+        self.x_lims = [[-1.5, 1.5], [-1.5, 1.5]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([3., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([3., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
@@ -408,7 +421,7 @@ class SCurve(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 1000
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
@@ -441,7 +454,7 @@ class Swiss(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 1000
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
@@ -474,7 +487,7 @@ class Moon(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 1000
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
@@ -507,7 +520,7 @@ class Circle(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 1000
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
@@ -538,7 +551,7 @@ class Checker(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 1000
+        self.n_train: int = 3000
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
