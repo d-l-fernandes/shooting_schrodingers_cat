@@ -100,8 +100,10 @@ class Model(pl.LightningModule):
         self.prior_sde.g = lambda t, x: self.diffusion_forward(x, t)
 
         # Variational q
-        self.q: variational.BaseVariational \
-            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
+        self.q_forward: variational.BaseVariational \
+            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, FLAGS.sigma)
+        self.q_backward: variational.BaseVariational \
+            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, FLAGS.sigma)
         self.likelihood: priors.BasePrior \
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
         self.p: priors.BasePrior \
@@ -110,6 +112,7 @@ class Model(pl.LightningModule):
         self.solve_sde = None
         self.optim_sde = None
         self.data_type = None
+        self.optim_q = None
 
         self.get_drift_diffusion(self.first, self.forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
@@ -121,14 +124,17 @@ class Model(pl.LightningModule):
         if self.first:
             self.solve_sde = self.prior_sde
             self.optim_sde = self.backward_sde
+            self.optim_q = self.q_backward
             self.data_type = "prior"
         elif self.forward:
             self.solve_sde = self.forward_sde
             self.optim_sde = self.backward_sde
+            self.optim_q = self.q_backward
             self.data_type = "prior"
         else:
             self.solve_sde = self.backward_sde
             self.optim_sde = self.forward_sde
+            self.optim_q = self.q_forward
             self.data_type = "data"
 
     @staticmethod
@@ -140,7 +146,7 @@ class Model(pl.LightningModule):
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
-        q_prob: torch.distributions.Distribution = self.q(ys[:-1])
+        q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
         s_is = q_prob.sample((FLAGS.num_samples,))
 
         xs = torch.empty_like(s_is, device=self.device)
@@ -149,8 +155,9 @@ class Model(pl.LightningModule):
             xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
 
         # Likelihood
-        likelihood_dist = self.likelihood(xs)
-        likelihood = likelihood_dist.log_prob(ys[1:]).mean(0)
+        index = torch.randint(FLAGS.num_samples, (1,))[0]
+        likelihood_dist = self.likelihood(xs[index])
+        likelihood = likelihood_dist.log_prob(ys[1:])
 
         # Variational KL
         prior_dist = self.p(ys[:-1])
@@ -254,13 +261,13 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.AdamW([
+        optim_backward = torch.optim.Adam([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
-            {"params": self.q.parameters()}, {"params": self.p.parameters()}
+            {"params": self.q_backward.parameters()},
         ], lr=FLAGS.learning_rate)
-        optim_forward = torch.optim.AdamW([
+        optim_forward = torch.optim.Adam([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
-            {"params": self.q.parameters()}, {"params": self.p.parameters()}
+            {"params": self.q_forward.parameters()},
         ], lr=FLAGS.learning_rate)
         return optim_backward, optim_forward
 
