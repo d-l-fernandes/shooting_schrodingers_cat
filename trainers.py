@@ -85,7 +85,8 @@ class ModelTrainer:
             max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
             check_val_every_n_epoch=FLAGS.eval_frequency,
             logger=tb_logger,
-            accelerator="ddp"
+            accelerator="ddp",
+            log_every_n_steps=1
             # stochastic_weight_avg=True,
         )
         # Data
