@@ -52,7 +52,7 @@ class Whirlpool(BasePriorSDE):
         self.noise_type = "diagonal"
         self.sde_type = "ito"
         if dims != 2:
-            raise RuntimeError("Double well only applicable to 2D.")
+            raise RuntimeError("Whirlpool only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return self.u(x)
@@ -83,13 +83,12 @@ class Hill(BasePriorSDE):
         self.fac = 1.
         self.delta = 0.35
         if dims != 2:
-            raise RuntimeError("Double well only applicable to 2D.")
+            raise RuntimeError("Hill only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return self.grad_u(x[..., 0], x[..., 1])
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
-        # return 10 * torch.exp(-(x**2).sum(-1) / (2 * 1.**2))
         z = (5 / 2.0) * (x ** 2 - 1 ** 2) ** 2 + y ** 2 + self.fac \
             * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta
         return z
