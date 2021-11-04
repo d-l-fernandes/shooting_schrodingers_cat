@@ -10,14 +10,14 @@ def rossler_noise(noise_dims: int, batch_dims: Tuple[int], device) \
 
     def generate_noise(delta_t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
 
-        beta = torch.multinomial(torch.tensor([1/6, 2/3, 1/6], device=device),
-                                 math.prod(size), replacement=True).reshape(size)
-        beta = (beta - 1) * torch.sqrt(3 * torch.abs(delta_t))
-        # beta = torch.randn(size, device=device) * torch.sqrt(2 * torch.abs(delta_t))
-        gamma = torch.multinomial(torch.tensor([1/2, 1/2], device=device),
-                                  math.prod(size), replacement=True).reshape(size)
-        gamma = (gamma * 2 - 1) * torch.sqrt(torch.abs(delta_t))
-        # gamma = torch.randn(size, device=device) * torch.sqrt(torch.abs(delta_t))
+        # beta = torch.multinomial(torch.tensor([1/6, 2/3, 1/6], device=device),
+        #                          math.prod(size), replacement=True).reshape(size)
+        # beta = (beta - 1) * torch.sqrt(3 * torch.abs(delta_t))
+        beta = torch.randn(size, device=device) * torch.sqrt(torch.abs(delta_t))
+        # gamma = torch.multinomial(torch.tensor([1/2, 1/2], device=device),
+        #                           math.prod(size), replacement=True).reshape(size)
+        # gamma = (gamma * 2 - 1) * torch.sqrt(torch.abs(delta_t))
+        gamma = torch.randn(size, device=device) * torch.sqrt(torch.abs(delta_t))
 
         beta_beta = torch.einsum("...b,...c->...bc", beta, beta)
 
