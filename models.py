@@ -179,11 +179,7 @@ class Model(pl.LightningModule):
         # self.log("variational_kl", variational_kl.mean())
         # self.log("ksd", ksd.mean())
         # self.log("obj", obj.mean())
-        self.logger.experiment.add_scalar("training/likelihood", metrics["likelihood"])
-        self.logger.experiment.add_scalar("training/variational_kl", metrics["variational_kl"])
-        self.logger.experiment.add_scalar("training/ksd", metrics["ksd"])
-        self.logger.experiment.add_scalar("training/obj", metrics["obj"])
-        # self.log("training", metrics)
+        self.log("training", metrics)
         return -obj.mean()
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
