@@ -404,16 +404,16 @@ class DoubleWellBiModalLeft(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.5]),
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.7]),
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_train // 2,))
-        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.5]),
+        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.7]),
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_train // 2,))
         self.xs_train = torch.cat((blob_1, blob_2))
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.5]),
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.7]),
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_test // 2,))
-        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.5]),
+        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.7]),
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_test // 2,))
         self.xs_test = torch.cat((blob_1, blob_2))
 
