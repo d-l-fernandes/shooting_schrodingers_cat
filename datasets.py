@@ -27,6 +27,7 @@ datasets_list = [
                     "toy_experiment_blobs_2d",
                     "toy_experiment_blobs_3d",
                     "double_well_left",
+                    "double_well_bimodal_left",
                     "double_well_right",
                     "s_curve",
                     "swiss_roll",
@@ -389,6 +390,38 @@ class DoubleWellLeft(BaseDataGenerator):
         return self.plot_2d_to_2d(output, model, metrics)
 
 
+class DoubleWellBiModalLeft(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 3000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-1.5, 1.5], [-1.5, 1.5]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.5]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_train // 2,))
+        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.5]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_train // 2,))
+        self.xs_train = torch.cat((blob_1, blob_2))
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.5]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_test // 2,))
+        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.5]),
+                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_test // 2,))
+        self.xs_test = torch.cat((blob_1, blob_2))
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
 class DoubleWellRight(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
@@ -594,6 +627,7 @@ datasets_dict = {
     "toy_experiment_blobs_2d": Blobs2D,
     "toy_experiment_blobs_3d": Blobs3D,
     "double_well_left": DoubleWellLeft,
+    "double_well_bimodal_left": DoubleWellBiModalLeft,
     "double_well_right": DoubleWellRight,
     "s_curve": SCurve,
     "swiss_roll": Swiss,
