@@ -1,6 +1,5 @@
 cd ..
-# hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --gpus '"device=0,1"' dlf28/pytorch_lightning\
-hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES="0,1" dlf28/pytorch_lightning\
+hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES="4,5" dlf28/pytorch_lightning\
 	python main.py \
 	  --drift=score_network \
 	  --diffusion=scalar \
