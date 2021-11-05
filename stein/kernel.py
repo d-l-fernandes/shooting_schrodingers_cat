@@ -4,7 +4,7 @@ from absl import flags
 
 Tensor = torch.Tensor
 
-flags.DEFINE_enum("schedule", "exponential_decay_min_0",
+flags.DEFINE_enum("schedule", "constant",
                   [
                       "exponential_decay_base_2",
                       "exponential_decay_min_0",
