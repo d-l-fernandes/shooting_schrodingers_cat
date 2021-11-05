@@ -473,7 +473,7 @@ class SCurve(BaseDataGenerator):
         self.xs_train = self.xs_train.float()
 
         # Test
-        x, y = datasets.make_s_curve(self.n_test, noise=1.)
+        x, y = datasets.make_s_curve(self.n_test, noise=0.1)
         self.xs_test = torch.tensor(x)[:, [0, 2]]
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
