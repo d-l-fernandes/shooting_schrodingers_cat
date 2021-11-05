@@ -267,9 +267,9 @@ class Spiral(BasePriorSDE):
         return self.grad_u(x)
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
-        positions = torch.vstack([torch.flatten(x), torch.flatten(y)]).transpose(0, 1)
+        positions = torch.vstack([torch.flatten(x), torch.flatten(y)]).permute(1, 0)
 
-        return self._u(positions.float()).transpose(0, 1).reshape((x.shape[0], x.shape[-1]))
+        return self._u(positions.float()).reshape((x.shape[0], x.shape[-1]))
 
     def _u(self, x: Tensor) -> Tensor:
         norm = distributions.MultivariateNormal(loc=self.locs.to(x.device), scale_tril=self.scale_tril.to(x.device))
