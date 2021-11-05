@@ -78,17 +78,29 @@ class ModelTrainer:
         else:
             resume_from_checkpoint = None
 
-        self.trainer = Trainer(
-            callbacks=[self.checkpoint_callback],
-            resume_from_checkpoint=resume_from_checkpoint,
-            gpus=FLAGS.gpus,
-            max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
-            check_val_every_n_epoch=FLAGS.eval_frequency,
-            logger=tb_logger,
-            accelerator="ddp",
-            log_every_n_steps=1
-            # stochastic_weight_avg=True,
-        )
+        if FLAGS.gpus > 1:
+            self.trainer = Trainer(
+                callbacks=[self.checkpoint_callback],
+                resume_from_checkpoint=resume_from_checkpoint,
+                gpus=FLAGS.gpus,
+                max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
+                check_val_every_n_epoch=FLAGS.eval_frequency,
+                logger=tb_logger,
+                accelerator="ddp",
+                log_every_n_steps=1
+                # stochastic_weight_avg=True,
+            )
+        else:
+            self.trainer = Trainer(
+                callbacks=[self.checkpoint_callback],
+                resume_from_checkpoint=resume_from_checkpoint,
+                gpus=FLAGS.gpus,
+                max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
+                check_val_every_n_epoch=FLAGS.eval_frequency,
+                logger=tb_logger,
+                log_every_n_steps=1
+                # stochastic_weight_avg=True,
+            )
         # Data
         self.prior: BaseDataGenerator = datasets_dict[FLAGS.prior]()
         self.data: BaseDataGenerator = datasets_dict[FLAGS.dataset](self.prior)
