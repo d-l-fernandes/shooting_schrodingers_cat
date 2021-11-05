@@ -29,6 +29,8 @@ datasets_list = [
                     "double_well_left",
                     "double_well_bimodal_left",
                     "double_well_right",
+                    "spiral_one",
+                    "spiral_two",
                     "s_curve",
                     "swiss_roll",
                     "moon",
@@ -162,7 +164,7 @@ class BaseDataGenerator(LightningDataModule):
 
             t_values = model.time_values.cpu().detach().numpy()
 
-            if type(model.prior_sde) in [prior_sdes.Hill, prior_sdes.Maze]:
+            if type(model.prior_sde) in [prior_sdes.Hill, prior_sdes.Maze, prior_sdes.Spiral]:
                 xx, yy = np.meshgrid(np.linspace(self.x_lims[0][0], self.x_lims[0][1], 100),
                                      np.linspace(self.x_lims[1][0], self.x_lims[1][1], 100))
                 zz = model.prior_sde.u(
@@ -450,6 +452,62 @@ class DoubleWellRight(BaseDataGenerator):
         return self.plot_2d_to_2d(output, model, metrics)
 
 
+class SpiralOne(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 3000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([0., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_train,))
+        self.xs_train = blob_1
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([0., 0.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
+        self.xs_test = blob_1
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
+class SpiralTwo(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 3000
+        self.n_test: int = 3000
+        self.observed_dims: int = 2
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.5, 6.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_train,))
+        self.xs_train = blob_1
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.5, 6.]),
+                                                  scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
+        self.xs_test = blob_1
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        return self.plot_2d_to_2d(output, model, metrics)
+
+
 class SCurve(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
@@ -629,6 +687,8 @@ datasets_dict = {
     "double_well_left": DoubleWellLeft,
     "double_well_bimodal_left": DoubleWellBiModalLeft,
     "double_well_right": DoubleWellRight,
+    "spiral_one": SpiralOne,
+    "spiral_two": SpiralTwo,
     "s_curve": SCurve,
     "swiss_roll": Swiss,
     "moon": Moon,

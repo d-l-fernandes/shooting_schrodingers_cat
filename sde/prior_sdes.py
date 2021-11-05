@@ -1,6 +1,9 @@
 import torch
 from absl import flags
 from torch import distributions
+from torch.autograd.functional import jacobian
+from sklearn import datasets
+import numpy as np
 
 Tensor = torch.Tensor
 
@@ -9,7 +12,8 @@ flags.DEFINE_enum("prior_sde", "brownian",
                       "brownian",
                       "whirlpool",
                       "hill",
-                      "maze"
+                      "maze",
+                      "spiral"
                   ],
                   "Prior to use.")
 FLAGS = flags.FLAGS
@@ -241,6 +245,48 @@ class Maze(BasePriorSDE):
             loc=x + drifts, scale_tril=scale_tril)
 
 
+class Spiral(BasePriorSDE):
+    def __init__(self, dims: int):
+        super().__init__(dims)
+        if dims != 2:
+            raise RuntimeError("Hill only applicable to 2D.")
+
+        self.noise_type = "diagonal"
+        self.sde_type = "ito"
+        self.fac = 1.
+        self.delta = 0.35
+        self.scaling_factor = 4.
+
+        x, y = datasets.make_swiss_roll(1000, noise=0.1)
+        self.locs = torch.tensor(x)[:, [0, 2]]
+        self.locs = (self.locs - self.locs.mean()) / self.locs.std() * self.scaling_factor
+        self.locs = self.locs.float()
+        self.scale_tril = torch.diag_embed(torch.ones_like(self.locs) * 0.1)
+
+    def f(self, t: Tensor, x: Tensor) -> Tensor:
+        return self.grad_u(x)
+
+    def u(self, x: Tensor, y: Tensor) -> Tensor:
+        positions = torch.vstack([torch.flatten(x), torch.flatten(y)]).transpose(0, 1)
+
+        return self._u(positions.float()).transpose(0, 1).reshape((x.shape[0], x.shape[-1]))
+
+    def _u(self, x: Tensor) -> Tensor:
+        norm = distributions.MultivariateNormal(loc=self.locs.to(x.device), scale_tril=self.scale_tril.to(x.device))
+        return torch.exp(norm.log_prob(x.unsqueeze(-2))).sum(-1)
+
+    def grad_u(self, x) -> Tensor:
+        return -jacobian(lambda x_grad: self._u(x_grad).sum(), x)
+
+    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
+        delta_ts = ts[1:] - ts[:-1]
+        diffusions = self.g(ts[:-1], x)
+        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
+        drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x))
+        return distributions.MultivariateNormal(
+            loc=x + drifts, scale_tril=scale_tril)
+
+
 class SDE:
     sde_type = 'ito'
 
@@ -256,4 +302,5 @@ prior_sdes_dict = {
     "whirlpool": Whirlpool,
     "hill": Hill,
     "maze": Maze,
+    "spiral": Spiral,
 }
