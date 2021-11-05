@@ -253,11 +253,10 @@ class Spiral(BasePriorSDE):
 
         self.noise_type = "diagonal"
         self.sde_type = "ito"
-        self.fac = 1.
-        self.delta = 0.35
+        self.fac = 5.
         self.scaling_factor = 4.
 
-        x, y = datasets.make_swiss_roll(1000, noise=0.1)
+        x, y = datasets.make_swiss_roll(1000, noise=0.2)
         self.locs = torch.tensor(x)[:, [0, 2]]
         self.locs = (self.locs - self.locs.mean()) / self.locs.std() * self.scaling_factor
         self.locs = self.locs.float()
@@ -273,7 +272,7 @@ class Spiral(BasePriorSDE):
 
     def _u(self, x: Tensor) -> Tensor:
         norm = distributions.MultivariateNormal(loc=self.locs.to(x.device), scale_tril=self.scale_tril.to(x.device))
-        return torch.exp(norm.log_prob(x.unsqueeze(-2))).sum(-1)
+        return self.fac * torch.exp(norm.log_prob(x.unsqueeze(-2))).sum(-1)
 
     def grad_u(self, x) -> Tensor:
         return -jacobian(lambda x_grad: self._u(x_grad).sum(), x)
