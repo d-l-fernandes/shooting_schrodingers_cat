@@ -162,7 +162,7 @@ class BaseDataGenerator(LightningDataModule):
 
             t_values = model.time_values.cpu().detach().numpy()
 
-            if type(model.prior_sde) == prior_sdes.Hill:
+            if type(model.prior_sde) in [prior_sdes.Hill, prior_sdes.Maze]:
                 xx, yy = np.meshgrid(np.linspace(self.x_lims[0][0], self.x_lims[0][1], 100),
                                      np.linspace(self.x_lims[1][0], self.x_lims[1][1], 100))
                 zz = model.prior_sde.u(
