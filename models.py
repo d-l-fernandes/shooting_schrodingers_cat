@@ -179,8 +179,7 @@ class Model(pl.LightningModule):
         # self.log("variational_kl", variational_kl.mean())
         # self.log("ksd", ksd.mean())
         # self.log("obj", obj.mean())
-        self.log("training", metrics)
-        return -obj.mean()
+        return -obj.mean(), metrics
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         if self.trainer.sanity_checking:
@@ -209,11 +208,12 @@ class Model(pl.LightningModule):
         # for _ in range(FLAGS.batch_repeats):
         # optim.zero_grad(set_to_none=True)
         optim.zero_grad()
-        loss = self.loss(xs, self.optim_sde)
+        loss, metrics = self.loss(xs, self.optim_sde)
         self.manual_backward(loss)
         torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
         optim.step()
         # torch.cuda.empty_cache()
+        self.log("training", metrics, on_step=False, on_epoch=True, add_dataloader_idx=False)
 
     def on_train_epoch_end(self, unused=None):
         if (self.current_epoch+1) % FLAGS.num_iter == 0:
@@ -225,6 +225,7 @@ class Model(pl.LightningModule):
             torch.cuda.empty_cache()
         if (self.current_epoch+1) % (FLAGS.num_iter*2) == 0:
             self.ipfp_iteration += 1
+
 
     def validation_step(self, batch, batch_idx):
         x_prior = batch["prior"]
