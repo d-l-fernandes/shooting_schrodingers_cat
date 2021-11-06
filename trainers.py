@@ -87,7 +87,7 @@ class ModelTrainer:
                 check_val_every_n_epoch=FLAGS.eval_frequency,
                 logger=tb_logger,
                 accelerator="ddp",
-                log_every_n_steps=1
+                log_every_n_steps=10
                 # stochastic_weight_avg=True,
             )
         else:
