@@ -20,5 +20,4 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --num_iter=100 \
     --sigma=0.001 \
     --max_gamma=0.3 \
-    -r \
     --gpus="$number_gpus"
