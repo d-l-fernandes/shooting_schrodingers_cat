@@ -50,7 +50,7 @@ schedule_dict = {
 def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int,
                       num_epochs: int) -> Tensor:
     schedule = schedule_dict[FLAGS.schedule]
-    sigma = sigma**schedule(ipfp_iteration, num_epochs)
+    # sigma = sigma**schedule(ipfp_iteration, num_epochs)
 
     pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) * delta_t**2
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) * delta_t
@@ -66,7 +66,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
     h = h.unsqueeze(-1)
-    dx2d2kxy = 1 / h**4 * torch.einsum("...bcd,...bce->...bcde", diffs, diffs)
+    dx2d2kxy = -1 / h**4 * torch.einsum("...bcd,...bce->...bcde", diffs, diffs)
     dx2d2kxy = torch.einsum("...bcde,...bc->...bcde", dx2d2kxy, kxy)
     dx2d2kxy += 1 / h**2 * torch.einsum("ab,...->...ab", torch.eye(theta.shape[-1], device=theta.device), kxy)
 
