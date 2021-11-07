@@ -17,7 +17,6 @@ flags.DEFINE_string("restore_time", "", "Which time folder to restore checkpoint
 
 flags.DEFINE_integer("gpus", 1, "Number of GPUs to use",
                      lower_bound=0)
-flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("eval_frequency", 10, "How often to evaluate the model.")
 
 FLAGS = flags.FLAGS

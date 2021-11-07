@@ -10,38 +10,45 @@ flags.DEFINE_enum("schedule", "constant",
                       "exponential_decay_min_0",
                       "inverse_exponential_decay_max_2",
                       "inverse_exponential_decay_max_1",
+                      "linear",
                       "constant",
                   ],
                   "Diffusion to use.")
 FLAGS = flags.FLAGS
 
 
-def exponential_decay_base_2(ipfp_iteration):
+def exponential_decay_base_2(ipfp_iteration, num_epochs):
     return 2 / 2**ipfp_iteration
 
 
-def exponential_decay_min_0(ipfp_iteration):
+def exponential_decay_min_0(ipfp_iteration, num_epochs):
     return np.exp(-ipfp_iteration)
 
 
-def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration):
+def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration, num_epochs):
     return -alpha * np.exp(-ipfp_iteration) + alpha
 
 
-def constant(ipfp_iteration):
+def linear_to_one(ipfp_iteration, num_epochs):
+    return ipfp_iteration / num_epochs
+
+
+def constant(ipfp_iteration, num_epochs):
     return 0.
 
 
 schedule_dict = {
     "exponential_decay_base_2": exponential_decay_base_2,
     "exponential_decay_min_0": exponential_decay_min_0,
-    "inverse_exponential_decay_max_2": lambda ipfp: inverse_exponential_decay_max_alpha(2, ipfp),
-    "inverse_exponential_decay_max_1": lambda ipfp: inverse_exponential_decay_max_alpha(1, ipfp),
+    "inverse_exponential_decay_max_2": lambda ipfp, num_epochs: inverse_exponential_decay_max_alpha(2, ipfp, num_epochs),
+    "inverse_exponential_decay_max_1": lambda ipfp, num_epochs: inverse_exponential_decay_max_alpha(1, ipfp, num_epochs),
+    "linear": linear_to_one,
     "constant": constant
 }
 
 
-def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int) -> Tensor:
+def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int,
+                      num_epochs: int) -> Tensor:
     schedule = schedule_dict[FLAGS.schedule]
     pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) * delta_t**2
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) * delta_t
@@ -51,7 +58,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
     # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1)
 
-    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**schedule(ipfp_iteration)
+    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**schedule(ipfp_iteration, num_epochs)
 
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)

@@ -18,6 +18,7 @@ from stein import kernel
 
 flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
+flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 1, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
 
@@ -170,7 +171,8 @@ class Model(pl.LightningModule):
         xs = xs.permute(1, 2, 0, 3)
         transition_density = self.prior_sde.transition_density(self.time_values.to(ys.device), s_is, self.forward)
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
-        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, self.delta_t, self.ipfp_iteration)
+        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, self.delta_t, self.ipfp_iteration,
+                                       FLAGS.num_epochs)
 
         obj = (likelihood - variational_kl - ksd)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
