@@ -147,8 +147,7 @@ class Model(pl.LightningModule):
         ys = torch.flip(ys, [0])
 
         q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
-        # s_is = q_prob.sample((FLAGS.num_samples,)).detach()
-        s_is = q_prob.sample((FLAGS.num_samples,))
+        s_is = q_prob.sample((FLAGS.num_samples,)).detach()
 
         xs = torch.empty_like(s_is, device=self.device)
 
