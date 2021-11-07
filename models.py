@@ -226,7 +226,6 @@ class Model(pl.LightningModule):
         if (self.current_epoch+1) % (FLAGS.num_iter*2) == 0:
             self.ipfp_iteration += 1
 
-
     def validation_step(self, batch, batch_idx):
         x_prior = batch["prior"]
         x_data = batch["data"]
