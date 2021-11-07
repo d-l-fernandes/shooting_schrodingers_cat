@@ -18,7 +18,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --learning_rate=1e-3 \
 	  --num_steps=10 \
 	  --delta_t=0.05 \
-	  --num_iter=200 \
+	  --num_iter=100 \
 	  --sigma=0.001 \
 	  --num_samples=20 \
 	  --max_gamma=0.5 \
