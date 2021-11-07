@@ -9,7 +9,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --diffusion=scalar \
     --dataset=double_well_right \
     --prior=double_well_left \
-    --schedule=linear \
+    --schedule=constant \
     --prior_sde=hill \
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
@@ -18,7 +18,8 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --learning_rate=1e-3 \
 	  --num_steps=10 \
 	  --delta_t=0.05 \
-	  --num_iter=200 \
-	  --sigma=0.01 \
+	  --num_iter=100 \
+	  --sigma=0.001 \
+	  --num_samples=20 \
 	  --max_gamma=0.5 \
     --gpus="$number_gpus"
