@@ -59,10 +59,10 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
     # h = torch.sqrt(
     #     sigma * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
-    h = sigma * torch.sqrt(h)
+    h = torch.sqrt(0.001 * h)
 
     pairwise_times_median = torch.einsum("...ab,...->...ab", pairwise_dists, 1. / h**2)
-    kxy = torch.exp(-pairwise_times_median / 2) * delta_t ** 2 # / sigma**2
+    kxy = torch.exp(-pairwise_times_median / 2) * delta_t ** 2 / sigma**2
 
     kxy_times_median = torch.einsum("...ab,...->...ab", kxy, 1. / h**2)
     diffs_times_median = torch.einsum("...abc,...->...abc", diffs, -1. / h**2)
