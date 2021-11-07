@@ -63,7 +63,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
 
     kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**2
 
-    median_times_kxy = torch.einsum("...bc,...bc->...bc", 1 / h ** 2, kxy),
+    median_times_kxy = torch.einsum("...bc,...bc->...bc", 1 / h ** 2, kxy)
 
     h = h.unsqueeze(-1)
     median_times_diffs = torch.einsum("...bcd,...bcd->...bcd", -1 / h ** 2, diffs)
