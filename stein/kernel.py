@@ -30,7 +30,7 @@ def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration, num_epochs):
 
 
 def linear_to_one(ipfp_iteration, num_epochs):
-    return max(ipfp_iteration / 10, 1.)
+    return min(ipfp_iteration / 10, 1.)
 
 
 def constant(ipfp_iteration, num_epochs):
