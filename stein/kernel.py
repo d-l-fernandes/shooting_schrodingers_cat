@@ -29,8 +29,8 @@ def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration, num_epochs):
     return -alpha * np.exp(-ipfp_iteration) + alpha
 
 
-def linear_to_one(ipfp_iteration, num_epochs):
-    return min(ipfp_iteration / 10, 1.)
+def linear(ipfp_iteration, num_epochs):
+    return min(ipfp_iteration / 5, 2.)
 
 
 def constant(ipfp_iteration, num_epochs):
@@ -42,7 +42,7 @@ schedule_dict = {
     "exponential_decay_min_0": exponential_decay_min_0,
     "inverse_exponential_decay_max_2": lambda ipfp, num_epochs: inverse_exponential_decay_max_alpha(2, ipfp, num_epochs),
     "inverse_exponential_decay_max_1": lambda ipfp, num_epochs: inverse_exponential_decay_max_alpha(1, ipfp, num_epochs),
-    "linear": linear_to_one,
+    "linear": linear,
     "constant": constant
 }
 
