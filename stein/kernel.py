@@ -57,18 +57,25 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
 
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
     h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
-    h = torch.sqrt(
-        sigma * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
-    # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1)
+    # h = torch.sqrt(
+    #     sigma * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
+    h = sigma * torch.sqrt(h).unsqueeze(-1).unsqueeze(-1)
 
     kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**2
 
+    median_times_kxy = torch.einsum("...bc,...bc->...bc", 1 / h ** 2, kxy),
+
     h = h.unsqueeze(-1)
-    dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
-    h = h.unsqueeze(-1)
-    dx2d2kxy = 1 / h**4 * torch.einsum("...bcd,...bce->...bcde", diffs, diffs)
+    median_times_diffs = torch.einsum("...bcd,...bcd->...bcd", -1 / h ** 2, diffs),
+
+    dxdkxy = torch.einsum(
+        "...bcd,...bc->...bcd",
+        median_times_diffs,
+        kxy)
+
+    dx2d2kxy = torch.einsum("...bcd,...bce->...bcde", median_times_diffs, median_times_diffs)
     dx2d2kxy = torch.einsum("...bcde,...bc->...bcde", dx2d2kxy, kxy)
-    dx2d2kxy += 1 / h**2 * torch.einsum("ab,...->...ab", torch.eye(theta.shape[-1], device=theta.device), kxy)
+    dx2d2kxy += torch.einsum("ab,...->...ab", torch.eye(theta.shape[-1], device=theta.device), median_times_kxy)
 
     trace_dx2d2lxy = torch.einsum("...ii->...", dx2d2kxy)
     first_term = torch.einsum("...ab,...ac,...cb->...ac", p_grad, kxy, p_grad)
