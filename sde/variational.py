@@ -31,16 +31,17 @@ class Gaussian(BaseVariational):
             torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
         )
         self.mean_nn = torch.nn.Linear(intermediate_size, self.output_size)
+        self.std_nn = torch.nn.Linear(intermediate_size, self.output_size**2)
 
     def forward(self, x: Tensor) -> distributions.Distribution:
         mean = self.mean_nn(self.nn(x))
-        out = torch.diag_embed(torch.ones_like(x, device=x.device) * self.sigma)
-        return distributions.MultivariateNormal(loc=mean, scale_tril=out.tril())
-        # out = self.std_nn(self.nn(x))
-        # out = out.reshape(out.shape[:-1] + (self.output_size,) + (self.output_size,))
-        # diag = torch.diagonal(out, dim1=-1, dim2=-2)
-        # out = out - torch.diag_embed(diag) + (torch.diag_embed(functional.softplus(diag) + 1e-4))
+        # out = torch.diag_embed(torch.ones_like(x, device=x.device) * self.sigma)
         # return distributions.MultivariateNormal(loc=mean, scale_tril=out.tril())
+        out = self.std_nn(self.nn(x))
+        out = out.reshape(out.shape[:-1] + (self.output_size,) + (self.output_size,))
+        diag = torch.diagonal(out, dim1=-1, dim2=-2)
+        out = out - torch.diag_embed(diag) + (torch.diag_embed(functional.softplus(diag) + 1e-4))
+        return distributions.MultivariateNormal(loc=mean, scale_tril=out.tril())
 
 
 variational_dict = {

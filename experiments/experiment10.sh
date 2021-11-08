@@ -11,7 +11,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --prior=double_well_left \
     --schedule=linear \
     --prior_sde=hill \
-	  --prior_dist=gaussian \
+	  --prior_dist=learnable_gaussian \
 	  --batch_size=1500 \
 	  --num_epochs=30 \
 	  --eval_frequency=200 \
