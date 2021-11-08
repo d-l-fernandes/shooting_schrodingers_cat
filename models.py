@@ -174,8 +174,8 @@ class Model(pl.LightningModule):
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, self.delta_t, self.ipfp_iteration,
                                        FLAGS.num_epochs)
 
-        scale = torch.max(torch.abs(likelihood)) / torch.max(ksd)
-        ksd = ksd * scale.detach()
+        scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
+        ksd = ksd * scale.unsqueeze(0).detach()
         obj = (likelihood - variational_kl - ksd)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
                    "obj": obj.mean()}
