@@ -215,7 +215,7 @@ class Model(pl.LightningModule):
         torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
         optim.step()
         # torch.cuda.empty_cache()
-        self.log("training", metrics, on_step=False, on_epoch=True, add_dataloader_idx=False)
+        self.log("training", metrics, on_step=False, on_epoch=False, add_dataloader_idx=False)
 
     def on_train_epoch_end(self, unused=None):
         if (self.current_epoch+1) % FLAGS.num_iter == 0:

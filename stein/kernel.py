@@ -30,14 +30,11 @@ def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration, num_epochs):
 
 
 def linear(ipfp_iteration, num_epochs):
-    return min(ipfp_iteration / 5, 2.)
+    return min(ipfp_iteration / 1, 2.)
 
 
 def constant(ipfp_iteration, num_epochs):
-    if ipfp_iteration == 0:
-        return 0
-    else:
-        return 2.
+    return 2.
 
 
 schedule_dict = {
