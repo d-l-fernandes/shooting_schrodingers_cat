@@ -69,7 +69,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, scales: Tenso
 
     kxy = torch.einsum("ab...,ab->ab...",
                        torch.exp(-pairwise_dists / h**2 / 2),
-                       scales) / sigma
+                       scales**2) / sigma
 
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
