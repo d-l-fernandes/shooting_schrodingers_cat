@@ -52,17 +52,17 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     schedule = schedule_dict[FLAGS.schedule]
     # sigma = sigma**schedule(ipfp_iteration, num_epochs)
 
-    pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) * delta_t**2
-    diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) * delta_t
+    pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) # * delta_t**2
+    diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) # * delta_t
 
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
     h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
     # h = torch.sqrt(
     #     sigma * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
-    h = torch.sqrt(h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
+    h = sigma * torch.sqrt(h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
     # h = torch.sqrt(sigma * h).unsqueeze(-1).unsqueeze(-1)
 
-    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t ** 2 / sigma**2
+    kxy = torch.exp(-pairwise_dists / h**2 / 2) # * delta_t ** 2 # / sigma
 
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
