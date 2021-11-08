@@ -183,10 +183,6 @@ class Model(pl.LightningModule):
         obj = (likelihood - variational_kl - ksd)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
                    "obj": obj.mean()}
-        # self.log("likelihood", likelihood.mean())
-        # self.log("variational_kl", variational_kl.mean())
-        # self.log("ksd", ksd.mean())
-        # self.log("obj", obj.mean())
         return -obj.mean(), metrics
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
@@ -255,9 +251,6 @@ class Model(pl.LightningModule):
                        "wasserstein_total": total_wasserstein}
             self.log("eval", log_metrics)
             self.log("wasserstein_total", total_wasserstein)
-            # self.log("wasserstein_prior", prior_wasserstein, prog_bar=True)
-            # self.log("wasserstein_data", data_wasserstein, prog_bar=True)
-            # self.log("wasserstein_total", total_wasserstein, prog_bar=True)
             self.metrics += metrics
 
         if self.trainer.sanity_checking:
