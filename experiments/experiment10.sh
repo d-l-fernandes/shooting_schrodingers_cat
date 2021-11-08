@@ -9,7 +9,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --diffusion=scalar \
     --dataset=double_well_right \
     --prior=double_well_left \
-    --schedule=constant \
+    --schedule=linear \
     --prior_sde=hill \
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \

@@ -175,7 +175,8 @@ class Model(pl.LightningModule):
                                        FLAGS.num_epochs)
 
         scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
-        ksd = ksd * scale.unsqueeze(0).detach()
+        ksd = ksd * scale.unsqueeze(0).detach() * kernel.schedule_dict[FLAGS.schedule](
+            self.ipfp_iteration, FLAGS.num_epochs)
         obj = (likelihood - variational_kl - ksd)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
                    "obj": obj.mean()}
