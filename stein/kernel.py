@@ -60,7 +60,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     # h = torch.sqrt(
     #     sigma * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
     h = torch.sqrt(
-        delta_t * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
+        delta_t * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1).detach()
     # h = torch.sqrt(delta_t * h).unsqueeze(-1).unsqueeze(-1)
 
     kxy = torch.exp(-pairwise_dists / h**2 / 2)
