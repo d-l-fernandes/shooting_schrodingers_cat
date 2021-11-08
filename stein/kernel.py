@@ -30,7 +30,7 @@ def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration, num_epochs):
 
 
 def linear(ipfp_iteration, num_epochs):
-    return min(ipfp_iteration / 5, 1.)
+    return min(ipfp_iteration / 5, 2.)
 
 
 def constant(ipfp_iteration, num_epochs):
@@ -50,7 +50,7 @@ schedule_dict = {
 def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int,
                       num_epochs: int) -> Tensor:
     schedule = schedule_dict[FLAGS.schedule]
-    # sigma = sigma**schedule(ipfp_iteration, num_epochs)
+    sigma = sigma**schedule(ipfp_iteration, num_epochs)
 
     pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) # * delta_t**2
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) # * delta_t
@@ -63,7 +63,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     #     delta_t * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
     h = torch.sqrt(delta_t * h).unsqueeze(-1).unsqueeze(-1)
 
-    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t**2 / sigma**2
+    kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t**2 / sigma
 
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
@@ -79,7 +79,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
 
     u = first_term + second_term + third_term + trace_dx2d2lxy
 
-    return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
-    # u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
+    # return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
+    u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
 
-    # return 1 / (theta.shape[-2] * (theta.shape[-2] - 1)) * torch.abs(torch.flatten(u, -2, -1).sum(-1))
+    return 1 / (theta.shape[-2] * (theta.shape[-2] - 1)) * torch.abs(torch.flatten(u, -2, -1).sum(-1))
