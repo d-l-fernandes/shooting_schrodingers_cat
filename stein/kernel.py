@@ -34,7 +34,10 @@ def linear(ipfp_iteration, num_epochs):
 
 
 def constant(ipfp_iteration, num_epochs):
-    return 1.
+    if ipfp_iteration == 0:
+        return 0
+    else:
+        return 2.
 
 
 schedule_dict = {
