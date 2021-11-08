@@ -39,7 +39,7 @@ class LearnableGaussian(BasePrior):
         super().__init__(input_size, output_size)
         self.sigma = torch.nn.Parameter(FLAGS.sigma * torch.ones((output_size,), device=device), requires_grad=True)
 
-    def forward(self, x: Tensor, time_values: Tensor, diffusions: Tensor) -> distributions.Distribution:
+    def forward(self, x: Tensor) -> distributions.Distribution:
         scale_tril = torch.diag_embed(torch.einsum("...a,a->...a", torch.ones_like(x), torch.sigmoid(self.sigma)))
         return distributions.MultivariateNormal(loc=x, scale_tril=scale_tril)
 
