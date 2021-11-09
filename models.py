@@ -275,11 +275,11 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.AdamW([
+        optim_backward = torch.optim.RMSprop([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
             {"params": self.q_backward.parameters()},
         ], lr=FLAGS.learning_rate)
-        optim_forward = torch.optim.AdamW([
+        optim_forward = torch.optim.RMSprop([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
             {"params": self.q_forward.parameters()},
         ], lr=FLAGS.learning_rate)
