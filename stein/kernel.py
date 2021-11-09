@@ -1,61 +1,10 @@
 import torch
-import numpy as np
-from absl import flags
 
 Tensor = torch.Tensor
-
-flags.DEFINE_enum("schedule", "constant",
-                  [
-                      "exponential_decay_base_2",
-                      "exponential_decay_min_0",
-                      "inverse_exponential_decay_max_2",
-                      "inverse_exponential_decay_max_1",
-                      "linear",
-                      "constant",
-                  ],
-                  "Diffusion to use.")
-FLAGS = flags.FLAGS
-
-
-def exponential_decay_base_2(ipfp_iteration, num_epochs):
-    return 2 / 2**ipfp_iteration
-
-
-def exponential_decay_min_0(ipfp_iteration, num_epochs):
-    return np.exp(-ipfp_iteration)
-
-
-def inverse_exponential_decay_max_alpha(alpha, ipfp_iteration, num_epochs):
-    return -alpha * np.exp(-ipfp_iteration) + alpha
-
-
-def linear(ipfp_iteration, num_epochs):
-    return min(ipfp_iteration / 5, 1.)
-
-
-def inverse_linear(ipfp_iteration, num_epochs):
-    return min(0., 1 - ipfp_iteration / 5)
-
-
-def constant(ipfp_iteration, num_epochs):
-    return 2.
-
-
-schedule_dict = {
-    "exponential_decay_base_2": exponential_decay_base_2,
-    "exponential_decay_min_0": exponential_decay_min_0,
-    "inverse_exponential_decay_max_2": lambda ipfp, num_epochs: inverse_exponential_decay_max_alpha(2, ipfp, num_epochs),
-    "inverse_exponential_decay_max_1": lambda ipfp, num_epochs: inverse_exponential_decay_max_alpha(1, ipfp, num_epochs),
-    "linear": linear,
-    "inverse_linear": inverse_linear,
-    "constant": constant
-}
 
 
 def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, scales: Tensor, ipfp_iteration: int,
                       num_epochs: int) -> Tensor:
-    # schedule = schedule_dict[FLAGS.schedule]
-    # sigma = sigma**schedule(ipfp_iteration, num_epochs)
 
     pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) # * delta_t**2
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) # * delta_t
