@@ -50,7 +50,7 @@ class Gaussian(BaseVariational):
         # out = out - torch.diag_embed(diag) + (torch.diag_embed(functional.softplus(diag) + 1e-4))
         # return distributions.MultivariateNormal(loc=mean, scale_tril=out.tril())
         # out = functional.softplus(self.std_nn(self.nn(x))) + 1e-8
-        out = functional.softplus(self.nn(x)) + 1e-8
+        out = functional.softplus(self.std_nn(x)) + 1e-8
         return distributions.MultivariateNormal(loc=mean, scale_tril=torch.diag_embed(out))
 
 
