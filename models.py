@@ -165,13 +165,10 @@ class Model(pl.LightningModule):
         xs = xs.permute(1, 2, 0, 3)
         transition_density, scales = self.prior_sde.transition_density(
             self.time_values.to(ys.device), s_is, self.forward)
-        # scales = scales[:, 0, 0]
+        scales = scales[:, 0, 0]
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
-        # ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, scales, self.ipfp_iteration,
-        #                                FLAGS.num_epochs)
-        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, self.ipfp_iteration,
-                                       FLAGS.num_epochs)
+        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()

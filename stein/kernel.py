@@ -3,8 +3,7 @@ import torch
 Tensor = torch.Tensor
 
 
-def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, ipfp_iteration: int,
-                      num_epochs: int) -> Tensor:
+def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tensor, scales: Tensor) -> Tensor:
 
     pairwise_dists = torch.cdist(theta.contiguous(), theta.contiguous()) * delta_t
     diffs = (theta.unsqueeze(-2) - theta.unsqueeze(-3)) * delta_t**0.5
@@ -14,11 +13,8 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma: float, delta_t: Tens
     # h = torch.sqrt(
     #     0.0001 * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1)
     h = torch.sqrt(
-        h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1).detach()
+        sigma * h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1).detach()
 
-    # kxy = torch.einsum("a...,a->a...",
-    #                    torch.exp(-pairwise_dists / h**2 / 2),
-    #                    scales**4)
     kxy = torch.exp(-pairwise_dists / h**2 / 2) * delta_t**2
 
     h = h.unsqueeze(-1)
