@@ -26,9 +26,9 @@ class Gaussian(BaseVariational):
         super().__init__(input_size, output_size, sigma)
         intermediate_size = 20 * input_size
         self.mean_nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.ReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.ReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.ReLU(),
+            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, self.output_size),
         )
         self.std_nn = torch.nn.Sequential(
