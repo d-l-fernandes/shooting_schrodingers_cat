@@ -142,7 +142,7 @@ class Model(pl.LightningModule):
         ys = torch.flip(ys, [0])
 
         q_prob: torch.distributions.Distribution = self.q(ys[:-1])
-        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1)).detach()
+        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1))
 
         xs = torch.empty_like(s_is, device=self.device)
 
@@ -169,6 +169,7 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
+        ksd = torch.einsum("a,a...->a...", scales, ksd)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()
