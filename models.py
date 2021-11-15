@@ -169,7 +169,7 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
-        ksd = torch.einsum("a,a...->a...", scales, ksd)
+        ksd = torch.einsum("a,a...->a...", scales**2, ksd)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()
@@ -268,11 +268,11 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.AdamW([
+        optim_backward = torch.optim.Adam([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
             {"params": self.q.parameters()},
         ], lr=FLAGS.learning_rate)
-        optim_forward = torch.optim.AdamW([
+        optim_forward = torch.optim.Adam([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
             {"params": self.q.parameters()},
         ], lr=FLAGS.learning_rate)

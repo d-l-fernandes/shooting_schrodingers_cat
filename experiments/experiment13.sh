@@ -11,7 +11,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --prior=spiral_two \
     --prior_sde=spiral \
     --prior_dist=gaussian \
-    --batch_size=1500 \
+    --batch_size=500 \
     --num_epochs=30 \
     --eval_frequency=200 \
     --learning_rate=1e-3 \
