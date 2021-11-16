@@ -14,10 +14,10 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --batch_size=1500 \
 	  --num_epochs=30 \
 	  --eval_frequency=200 \
-	  --learning_rate=1e-3 \
+	  --learning_rate=2e-3 \
 	  --num_steps=10 \
 	  --delta_t=0.05 \
 	  --num_iter=100 \
 	  --sigma=0.001 \
-	  --max_gamma=0.5 \
+	  --max_gamma=0.3 \
     --gpus="$number_gpus"
