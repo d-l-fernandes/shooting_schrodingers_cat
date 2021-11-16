@@ -1,12 +1,15 @@
 import torch
-from .step_funs import rossler_step
-from .noise import rossler_noise
+from .step_funs import rossler_step, em_step
+from .noise import rossler_noise, em_noise
 
 
 def integrate(sde, y0, ts, method='rossler'):
     if method == 'rossler':
         step = rossler_step
         noise = rossler_noise(y0.shape[-1], y0.shape[:-1], y0.device)
+    elif method == 'em':
+        step = em_step
+        noise = em_noise(y0.shape[-1], y0.shape[:-1], y0.device)
     else:
         raise ValueError('Unknown method: {}'.format(method))
 
@@ -18,8 +21,8 @@ def stochastic_integrate(sde, y0: torch.Tensor, ts, step, noise):
     ys[0] = y0
     for i in range(ts.shape[0]-1):
         delta_t = ts[i+1] - ts[i]
-        beta, chi = noise(delta_t)
-        next_y = step(ys[i], ts[i], beta, chi, delta_t, sde)
+        noise_step = noise(delta_t)
+        next_y = step(ys[i], ts[i], noise_step, delta_t, sde)
         ys = torch.cat((ys, next_y[None]), 0)
 
     return ys

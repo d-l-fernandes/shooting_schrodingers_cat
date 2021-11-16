@@ -4,12 +4,13 @@ import torch
 
 def rossler_step(x: torch.Tensor,
                  t: float,
-                 beta: torch.Tensor,
-                 chi: torch.Tensor,
+                 noise: Tuple[torch.Tensor, torch.Tensor],
                  delta_t: float,
                  sde) -> torch.tensor:
     drift_1 = sde.f(t, x)
     diffusion_1 = sde.g(t, x)
+
+    beta, chi = noise
 
     # Aux values
     diff_1_beta = torch.einsum("...bc,...c->...b", diffusion_1, beta)
@@ -58,3 +59,18 @@ def rossler_step(x: torch.Tensor,
     x_next = x + drift_term + first_diff_term + second_diff_term + third_diff_term + forth_diff_term
 
     return x_next
+
+
+def em_step(x: torch.Tensor,
+            t: float,
+            noise: torch.Tensor,
+            delta_t: float,
+            sde) -> torch.tensor:
+    drift_1 = sde.f(t, x)
+    diffusion_1 = sde.g(t, x)
+
+    # Aux values
+    diff_1_beta = torch.einsum("...bc,...c->...b", diffusion_1, noise)
+    x_2_0 = x + drift_1 * delta_t + diff_1_beta
+
+    return x_2_0

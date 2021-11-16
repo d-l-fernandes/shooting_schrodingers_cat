@@ -29,3 +29,15 @@ def rossler_noise(noise_dims: int, batch_dims: Tuple[int], device) \
         return beta, chi
 
     return generate_noise
+
+
+def em_noise(noise_dims: int, batch_dims: Tuple[int], device) \
+        -> Callable[[torch.Tensor], torch.Tensor]:
+
+    size = batch_dims + (noise_dims, )
+
+    def generate_noise(delta_t: torch.Tensor) -> torch.Tensor:
+        beta = torch.randn(size, device=device) * torch.sqrt(torch.abs(delta_t))
+        return beta
+
+    return generate_noise
