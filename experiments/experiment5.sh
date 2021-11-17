@@ -12,7 +12,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --prior_sde=brownian \
     --prior_dist=gaussian \
     --batch_size=1500 \
-    --num_epochs=30 \
+    --num_epochs=25 \
     --eval_frequency=200 \
     --learning_rate=1e-3 \
     --num_steps=10 \

@@ -27,6 +27,7 @@ flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 
 flags.DEFINE_bool("same_diffusion", False, "Whether to use same diffusion.")
+flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 
 FLAGS = flags.FLAGS
 
@@ -101,7 +102,9 @@ class Model(pl.LightningModule):
         self.prior_sde.g = lambda t, x: self.diffusion_forward(x, t)
 
         # Variational q
-        self.q: variational.BaseVariational \
+        self.q_backwards: variational.BaseVariational \
+            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, FLAGS.sigma)
+        self.q_forwards: variational.BaseVariational \
             = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, FLAGS.sigma)
         self.likelihood: priors.BasePrior \
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
@@ -110,6 +113,8 @@ class Model(pl.LightningModule):
 
         self.solve_sde = None
         self.optim_sde = None
+        self.non_optim_sde = None
+        self.optim_q = None
         self.data_type = None
 
         self.get_drift_diffusion(self.first, self.forward)
@@ -122,26 +127,35 @@ class Model(pl.LightningModule):
         if self.first:
             self.solve_sde = self.prior_sde
             self.optim_sde = self.backward_sde
+            self.non_optim_sde = self.prior_sde
+            self.optim_q = self.q_backwards
             self.data_type = "prior"
         elif self.forward:
             self.solve_sde = self.forward_sde
             self.optim_sde = self.backward_sde
+            self.non_optim_sde = self.forward_sde
+            self.optim_q = self.q_backwards
             self.data_type = "prior"
         else:
             self.solve_sde = self.backward_sde
             self.optim_sde = self.forward_sde
+            self.non_optim_sde = self.backward_sde
+            self.optim_q = self.q_forwards
             self.data_type = "data"
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values) -> Tensor:
         # xs = torchsde.sdeint(sde, x_0, time_values, method="srk", adaptive=False, dt=FLAGS.delta_t)
-        xs = integrate(sde, x_0, time_values)
+        if FLAGS.do_dsb:
+            xs = integrate(sde, x_0, time_values, method="em")
+        else:
+            xs = integrate(sde, x_0, time_values, method="rossler")
         return xs
 
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
-        q_prob: torch.distributions.Distribution = self.q(ys[:-1])
+        q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
         s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1))
 
         xs = torch.empty_like(s_is, device=self.device)
@@ -169,7 +183,8 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
-        ksd = torch.einsum("a,a...->a...", scales**2, ksd)
+        # ksd = ksd * FLAGS.delta_t
+        ksd = torch.einsum("a,a...->a...", scales, ksd)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()
@@ -177,6 +192,18 @@ class Model(pl.LightningModule):
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
                    "obj": obj.mean()}
         return -obj.mean(), metrics
+
+    def loss_dsb(self, ys: Tensor, sde, other_sde):
+        ys = torch.flip(ys, [0])
+
+        obj = ys[:-1] - ys[1:]
+        time_values = self.time_values.to(ys.device)
+        drifts_term = \
+            sde.f(time_values[:-1], ys[:-1]) - other_sde.f(time_values[:-1], ys[:-1]) + \
+            other_sde.f(time_values[1:], ys[1:])
+        obj = (obj + FLAGS.delta_t * drifts_term) ** 2
+        metrics = {"obj": obj.mean()}
+        return obj.mean(), metrics
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         if self.trainer.sanity_checking:
@@ -203,9 +230,11 @@ class Model(pl.LightningModule):
             xs = self.solve(x, self.solve_sde, self.time_values)
 
         # for _ in range(FLAGS.batch_repeats):
-        # optim.zero_grad(set_to_none=True)
-        optim.zero_grad()
-        loss, metrics = self.loss(xs, self.optim_sde)
+        optim.zero_grad(set_to_none=True)
+        if FLAGS.do_dsb:
+            loss, metrics = self.loss_dsb(xs, self.optim_sde, self.non_optim_sde)
+        else:
+            loss, metrics = self.loss(xs, self.optim_sde)
         self.manual_backward(loss)
         torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
         optim.step()
@@ -270,11 +299,11 @@ class Model(pl.LightningModule):
     def configure_optimizers(self):
         optim_backward = torch.optim.Adam([
             {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
-            {"params": self.q.parameters()},
+            {"params": self.q_backwards.parameters()},
         ], lr=FLAGS.learning_rate)
         optim_forward = torch.optim.Adam([
             {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
-            {"params": self.q.parameters()},
+            {"params": self.q_forwards.parameters()},
         ], lr=FLAGS.learning_rate)
         return optim_backward, optim_forward
 

@@ -138,27 +138,31 @@ class BaseDataGenerator(LightningDataModule):
             z_1 = z_values_forward[:, -1]
             z_0 = z_values_backward[:, -1]
 
-            fig: Figure = figure.Figure(figsize=(15, 15))
-            gs = fig.add_gridspec(3, 2, height_ratios=(2, 7, 7), width_ratios=(1, 1),
-                                  left=0.1, right=0.9, bottom=0.1, top=0.9,
-                                  wspace=0.1, hspace=0.1)
+            fig_obj: Figure = figure.Figure(figsize=(15, 15))
+            gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
+                                      left=0.1, right=0.9, bottom=0.1, top=0.9,
+                                      wspace=0.1, hspace=0.1)
 
-            self.plot_objective(gs, fig, metrics)
+            self.plot_objective(gs, fig_obj, metrics)
             # Plotting
-            ax_z_backwards: Axes = fig.add_subplot(gs[1, 0])
+            fig_z_backwards: Figure = figure.Figure(figsize=(15, 15))
+            ax_z_backwards: Axes = fig_z_backwards.add_subplot(1, 1, 1)
             ax_z_backwards.set_ylim(self.x_lims[1][0], self.x_lims[1][1])
             ax_z_backwards.set_xlim(self.x_lims[0][0], self.x_lims[0][1])
-            ax_z_forwards: Axes = fig.add_subplot(gs[2, 0])
+            fig_z_forwards: Figure = figure.Figure(figsize=(15, 15))
+            ax_z_forwards: Axes = fig_z_forwards.add_subplot(1, 1, 1)
             ax_z_forwards.set_ylim(self.x_lims[1][0], self.x_lims[1][1])
             ax_z_forwards.set_xlim(self.x_lims[0][0], self.x_lims[0][1])
             # ax_z.axis("off")
 
-            ax_z_0: Axes = fig.add_subplot(gs[1, 1])
+            fig_z_0: Figure = figure.Figure(figsize=(15, 15))
+            ax_z_0: Axes = fig_z_0.add_subplot(1, 1, 1)
             ax_z_0.set_ylim(self.x_lims[1][0], self.x_lims[1][1])
             ax_z_0.set_xlim(self.x_lims[0][0], self.x_lims[0][1])
             # ax_x.axis("off")
 
-            ax_z_1: Axes = fig.add_subplot(gs[2, 1])
+            fig_z_1: Figure = figure.Figure(figsize=(15, 15))
+            ax_z_1: Axes = fig_z_1.add_subplot(1, 1, 1)
             ax_z_1.set_ylim(self.x_lims[1][0], self.x_lims[1][1])
             ax_z_1.set_xlim(self.x_lims[0][0], self.x_lims[0][1])
 
@@ -204,7 +208,8 @@ class BaseDataGenerator(LightningDataModule):
                 line = ax_z_backwards.add_collection(lc)
                 del lc
 
-            return [fig], ["results"]
+            return [fig_obj, fig_z_forwards, fig_z_backwards, fig_z_0, fig_z_1], \
+                   ["objective", "forwards", "backwards", "z_0", "z_1"]
 
         else:
             raise ValueError("Dims must be 2")
@@ -558,13 +563,13 @@ class Swiss(BaseDataGenerator):
             self.prior_dataset.n_test = self.n_test
             self.prior_dataset.setup(stage)
         # Train
-        x, y = datasets.make_swiss_roll(self.n_train)
+        x, y = datasets.make_swiss_roll(self.n_train, noise=0.1)
         self.xs_train = torch.tensor(x)[:, [0, 2]]
         self.xs_train = (self.xs_train - self.xs_train.mean()) / self.xs_train.std() * self.scaling_factor
         self.xs_train = self.xs_train.float()
 
         # Test
-        x, y = datasets.make_swiss_roll(self.n_test)
+        x, y = datasets.make_swiss_roll(self.n_test, noise=0.1)
         self.xs_test = torch.tensor(x)[:, [0, 2]]
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
@@ -591,13 +596,13 @@ class Moon(BaseDataGenerator):
             self.prior_dataset.n_test = self.n_test
             self.prior_dataset.setup(stage)
         # Train
-        x, y = datasets.make_moons(self.n_train)
+        x, y = datasets.make_moons(self.n_train, noise=0.1)
         self.xs_train = torch.tensor(x)
         self.xs_train = (self.xs_train - self.xs_train.mean()) / self.xs_train.std() * self.scaling_factor
         self.xs_train = self.xs_train.float()
 
         # Test
-        x, y = datasets.make_moons(self.n_test)
+        x, y = datasets.make_moons(self.n_test, noise=0.1)
         self.xs_test = torch.tensor(x)
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
@@ -624,12 +629,12 @@ class Circle(BaseDataGenerator):
             self.prior_dataset.n_test = self.n_test
             self.prior_dataset.setup(stage)
         # Train
-        x, y = datasets.make_circles(self.n_train, factor=0.5)
+        x, y = datasets.make_circles(self.n_train, factor=0.5, noise=0.1)
         self.xs_train = torch.tensor(x) * self.scaling_factor
         self.xs_train = self.xs_train.float()
 
         # Test
-        x, y = datasets.make_circles(self.n_test, factor=0.5)
+        x, y = datasets.make_circles(self.n_test, factor=0.5, noise=0.1)
         self.xs_test = torch.tensor(x) * self.scaling_factor
         self.xs_test = self.xs_test.float()
 
