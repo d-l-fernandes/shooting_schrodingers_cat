@@ -184,7 +184,9 @@ class Model(pl.LightningModule):
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
         # ksd = ksd * FLAGS.delta_t
-        ksd = torch.einsum("a,a...->a...", scales, ksd)
+        ksd = torch.einsum("a,a...->a...",
+                           (scales / FLAGS.delta_t**0.5)**2,
+                           ksd)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()
@@ -197,7 +199,7 @@ class Model(pl.LightningModule):
         ys = torch.flip(ys, [0])
 
         obj = ys[:-1] - ys[1:]
-        time_values = self.time_values.to(ys.device)
+        time_values = torch.tile(self.time_values.to(ys.device)[:, None, None], (1, ys.shape[1], 1))
         drifts_term = \
             sde.f(time_values[:-1], ys[:-1]) - other_sde.f(time_values[:-1], ys[:-1]) + \
             other_sde.f(time_values[1:], ys[1:])

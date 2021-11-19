@@ -7,19 +7,18 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	python main.py \
 	  --drift=score_network \
 	  --diffusion=scalar \
-    --dataset=toy_experiment_blobs_2d \
-    --prior=gaussian \
-    --prior_sde=whirlpool \
+    --dataset=double_well_right \
+    --prior=double_well_left \
+    --prior_sde=hill \
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
 	  --num_epochs=25 \
-	  --eval_frequency=200 \
-	  --learning_rate=2e-3 \
-	  --num_steps=10 \
-	  --delta_t=0.05 \
-	  --num_iter=100 \
+	  --eval_frequency=600 \
+	  --learning_rate=1e-3 \
+	  --num_steps=100 \
+	  --delta_t=0.01 \
+	  --num_iter=300 \
 	  --sigma=0.001 \
-    --gpus="$number_gpus" #\
-    # -p \
-    # --restore_date=2021-11-16\
-    # --restore_time=19:05
+	  --max_gamma=0.3 \
+    --gpus="$number_gpus"\
+    --do_dsb

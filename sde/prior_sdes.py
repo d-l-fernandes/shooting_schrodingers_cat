@@ -95,7 +95,8 @@ class Hill(BasePriorSDE):
             raise RuntimeError("Hill only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.grad_u(x[..., 0], x[..., 1])
+        return torch.zeros_like(x, device=x.device)
+        # return self.grad_u(x[..., 0], x[..., 1])
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
         z = (5 / 2.0) * (x ** 2 - 1 ** 2) ** 2 + y ** 2 + self.fac \

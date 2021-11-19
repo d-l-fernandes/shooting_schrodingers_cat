@@ -18,6 +18,7 @@ flags.DEFINE_string("restore_time", "", "Which time folder to restore checkpoint
 flags.DEFINE_integer("gpus", 1, "Number of GPUs to use",
                      lower_bound=0)
 flags.DEFINE_integer("eval_frequency", 10, "How often to evaluate the model.")
+flags.DEFINE_integer("restore_epoch", 1, "Which epoch to restore.")
 
 FLAGS = flags.FLAGS
 
@@ -64,16 +65,16 @@ class ModelTrainer:
 
         # Model checkpoint manager
         self.checkpoint_callback = ModelCheckpoint(dirpath=self.checkpoint_folder,
-                                                   filename='last',
-                                                   monitor="wasserstein_total",
-                                                   save_top_k=1,
+                                                   filename='{epoch}',
+                                                   # monitor="wasserstein_total",
+                                                   save_top_k=-1,
                                                    )
 
         # Logger
         tb_logger = pl_loggers.TensorBoardLogger(self.summary_folder)
 
         if FLAGS.restore or FLAGS.predict:
-            resume_from_checkpoint = self.checkpoint_folder + "last.ckpt"
+            resume_from_checkpoint = self.checkpoint_folder + f"epoch={FLAGS.restore_epoch}.ckpt"
         else:
             resume_from_checkpoint = None
 
@@ -85,7 +86,7 @@ class ModelTrainer:
                 max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
                 check_val_every_n_epoch=FLAGS.eval_frequency,
                 logger=tb_logger,
-                accelerator="ddp",
+                strategy="ddp",
                 log_every_n_steps=20
                 # stochastic_weight_avg=True,
             )
@@ -106,7 +107,7 @@ class ModelTrainer:
 
         # Model
         if FLAGS.predict or FLAGS.restore:
-            self.model = Model.load_from_checkpoint(self.checkpoint_folder + "last.ckpt")
+            self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"epoch={FLAGS.restore_epoch}.ckpt")
         else:
             self.model = Model(self.data.observed_dims, not(FLAGS.restore or FLAGS.predict), True,
                                self.results_folder)

@@ -175,38 +175,45 @@ class BaseDataGenerator(LightningDataModule):
                     torch.tensor(xx).to(output.z_values_forward.device),
                     torch.tensor(yy).to(output.z_values_forward.device),
                 ).detach().cpu().numpy()
-                ax_z_1.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
-                ax_z_0.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
-                ax_z_backwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
-                ax_z_forwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="OrRd", shading="auto")
+                ax_z_1.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
+                ax_z_0.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
+                ax_z_backwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
+                ax_z_forwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
 
             norm = plt.Normalize(t_values.min(), t_values.max())
-            ax_z_backwards.scatter(z_values_backward[:, -1, 0], z_values_backward[:, -1, 1],
-                                   c=np.ones_like(z_values_backward[:, -1, 0]), cmap="gnuplot", alpha=0.5, marker="x")
-            ax_z_forwards.scatter(z_values_forward[:, -1, 0], z_values_forward[:, -1, 1],
-                                  c=np.ones_like(z_values_forward[:, -1, 0]), cmap="gnuplot", alpha=0.5, marker="x")
-            ax_z_1.scatter(x_data[:, 0], x_data[:, 1], c="r", marker='1')
-            ax_z_1.scatter(z_1[:, 0], z_1[:, 1], c="b", marker='*', alpha=0.5)
-            ax_z_0.scatter(x_prior[:, 0], x_prior[:, 1], c="r", marker='1')
-            ax_z_0.scatter(z_0[:, 0], z_0[:, 1], c="b", marker='*', alpha=0.5)
-            for i in range(z_values_forward.shape[0]):
+
+            ax_z_1.scatter(x_data[:, 0], x_data[:, 1], c="k", marker='o', alpha=0.2)
+            ax_z_1.scatter(z_1[:, 0], z_1[:, 1], c="darkorange", marker='o', alpha=0.2)
+            ax_z_0.scatter(x_prior[:, 0], x_prior[:, 1], c="k", marker='o', alpha=0.2)
+            ax_z_0.scatter(z_0[:, 0], z_0[:, 1], c="darkorange", marker='o', alpha=0.2)
+
+            for i in range(0, z_values_forward.shape[0], 4):
                 points = np.array([z_values_forward[i, :, 0], z_values_forward[i, :, 1]]).T.reshape(-1, 1, 2)
                 segments = np.concatenate([points[:-1], points[1:]], axis=1)
-                lc = LineCollection(segments, cmap='gnuplot', norm=norm)
+                lc = LineCollection(segments, cmap='gnuplot', norm=norm, zorder=2)
                 lc.set_array(t_values)
                 lc.set_linewidth(2)
-                lc.set_alpha(0.5)
+                lc.set_alpha(0.2)
                 line = ax_z_forwards.add_collection(lc)
                 del lc
-            for i in range(z_values_backward.shape[0]):
+            for i in range(0, z_values_backward.shape[0], 4):
                 points = np.array([z_values_backward[i, :, 0], z_values_backward[i, :, 1]]).T.reshape(-1, 1, 2)
                 segments = np.concatenate([points[:-1], points[1:]], axis=1)
-                lc = LineCollection(segments, cmap='gnuplot', norm=norm)
+                lc = LineCollection(segments, cmap='gnuplot', norm=norm, zorder=2)
                 lc.set_array(t_values)
                 lc.set_linewidth(2)
-                lc.set_alpha(0.5)
+                lc.set_alpha(0.2)
                 line = ax_z_backwards.add_collection(lc)
                 del lc
+
+            ax_z_forwards.scatter(x_data[:, 0], x_data[:, 1],  c="k", marker='o',  alpha=0.2, zorder=1)
+            ax_z_backwards.scatter(x_prior[:, 0], x_prior[:, 1], c="k", marker='o', alpha=0.2, zorder=1)
+            ax_z_backwards.scatter(z_values_backward[:, -1, 0], z_values_backward[:, -1, 1],
+                                   c="darkorange",
+                                   alpha=0.2, marker="o", zorder=3)
+            ax_z_forwards.scatter(z_values_forward[:, -1, 0], z_values_forward[:, -1, 1],
+                                  c="darkorange",
+                                  alpha=0.2, marker="o", zorder=3)
 
             return [fig_obj, fig_z_forwards, fig_z_backwards, fig_z_0, fig_z_1], \
                    ["objective", "forwards", "backwards", "z_0", "z_1"]
@@ -647,8 +654,8 @@ class Checker(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 4500
+        self.n_test: int = 4500
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]

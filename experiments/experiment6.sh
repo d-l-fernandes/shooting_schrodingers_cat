@@ -14,9 +14,12 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --batch_size=1500 \
     --num_epochs=25 \
     --eval_frequency=200 \
-    --learning_rate=1e-3 \
+    --learning_rate=5e-3 \
     --num_steps=10 \
     --delta_t=0.05 \
     --num_iter=100 \
     --sigma=0.001 \
-    --gpus="$number_gpus"
+    --gpus="$number_gpus"\
+    # -p \
+    # --restore_date=2021-11-16\
+    # --restore_time=20:17
