@@ -14,11 +14,12 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
 	  --num_epochs=50 \
-	  --eval_frequency=200 \
-	  --learning_rate=6e-3 \
+	  --eval_frequency=20 \
+	  --learning_rate=1e-3 \
 	  --num_steps=20 \
 	  --delta_t=0.05 \
-	  --num_iter=100 \
+	  --num_iter=10 \
 	  --sigma=0.001 \
+	  --batch_repeats=20 \
 	  --max_gamma=0.3 \
     --gpus="$number_gpus"
