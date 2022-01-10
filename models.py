@@ -231,16 +231,16 @@ class Model(pl.LightningModule):
         with torch.no_grad():
             xs = self.solve(x, self.solve_sde, self.time_values)
 
-        # for _ in range(FLAGS.batch_repeats):
-        optim.zero_grad(set_to_none=True)
-        if FLAGS.do_dsb:
-            loss, metrics = self.loss_dsb(xs, self.optim_sde, self.non_optim_sde)
-        else:
-            loss, metrics = self.loss(xs, self.optim_sde)
-        self.manual_backward(loss)
-        torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
-        optim.step()
-        # torch.cuda.empty_cache()
+        for _ in range(FLAGS.batch_repeats):
+            optim.zero_grad(set_to_none=True)
+            if FLAGS.do_dsb:
+                loss, metrics = self.loss_dsb(xs, self.optim_sde, self.non_optim_sde)
+            else:
+                loss, metrics = self.loss(xs, self.optim_sde)
+            self.manual_backward(loss)
+            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            optim.step()
+            # torch.cuda.empty_cache()
         self.log("training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False)
 
     def on_train_epoch_end(self, unused=None):
