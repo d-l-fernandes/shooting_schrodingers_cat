@@ -25,6 +25,7 @@ flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_boun
 flags.DEFINE_float("delta_t", 0.05, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
+flags.DEFINE_enum("solver", "srk", ["em", "srk"], "Solver to use")
 
 flags.DEFINE_bool("same_diffusion", False, "Whether to use same diffusion.")
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
@@ -32,6 +33,8 @@ flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 FLAGS = flags.FLAGS
 
 Tensor = torch.Tensor
+
+solver_scale = {"em": 1., "srk": 1.5}
 
 
 class Metrics(NamedTuple):
@@ -145,23 +148,31 @@ class Model(pl.LightningModule):
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values) -> Tensor:
-        # xs = torchsde.sdeint(sde, x_0, time_values, method="srk", adaptive=False, dt=FLAGS.delta_t)
         if FLAGS.do_dsb:
-            xs = integrate(sde, x_0, time_values, method="em")
+            # xs = integrate(sde, x_0, time_values, method="em")
+            xs = torchsde.sdeint(sde, x_0, time_values, method="em", adaptive=False, dt=FLAGS.delta_t)
         else:
-            xs = integrate(sde, x_0, time_values, method="rossler")
+            xs = torchsde.sdeint(sde, x_0, time_values, method=FLAGS.solver, adaptive=False, dt=FLAGS.delta_t)
+            #  xs = integrate(sde, x_0, time_values, method="rossler")
         return xs
 
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
         q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
-        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1))
+        s_is = torch.tile(q_prob.sample().unsqueeze(2), (1, 1, FLAGS.num_samples, 1)).view(
+            (ys.shape[0]-1, FLAGS.num_samples * ys.shape[1], ys.shape[-1]))
 
         xs = torch.empty_like(s_is, device=self.device)
 
         for i in range(ys.shape[0]-1):
-            xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
+            xs[i, :] = self.solve(s_is[i, :], sde, self.time_values[i:i+2])[-1]
+
+        s_is = s_is.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
+        xs = xs.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
+
+        s_is = s_is.permute(2, 0, 1, 3)
+        xs = xs.permute(2, 0, 1, 3)
 
         # Likelihood
         # index = torch.randint(FLAGS.num_samples, (1,))[0]
@@ -183,10 +194,10 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
-        # ksd = ksd * FLAGS.delta_t
-        ksd = torch.einsum("a,a...->a...",
-                           (scales / FLAGS.delta_t**0.5)**2,
-                           ksd)
+        ksd = ksd * FLAGS.delta_t**solver_scale[FLAGS.solver]
+        # ksd = torch.einsum("a,a...->a...",
+        #                    (scales / FLAGS.delta_t**0.5)**2,
+        #                    ksd)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()
@@ -272,7 +283,7 @@ class Model(pl.LightningModule):
                           torch.tensor([total_wasserstein]))
         if not self.trainer.sanity_checking:
             log_metrics = {"wasserstein_prior": prior_wasserstein, "wasserstein_data": data_wasserstein,
-                       "wasserstein_total": total_wasserstein}
+                           "wasserstein_total": total_wasserstein}
             self.log("eval", log_metrics)
             self.log("wasserstein_total", total_wasserstein)
             self.metrics += metrics
