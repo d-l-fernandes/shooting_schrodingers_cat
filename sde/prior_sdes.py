@@ -39,7 +39,7 @@ class BasePriorSDE:
 class Brownian(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
-        self.noise_type = "diagonal"
+        self.noise_type = "additive"
         self.sde_type = "ito"
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
@@ -48,16 +48,17 @@ class Brownian(BasePriorSDE):
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.diag_embed(torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions))
+        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         return \
             distributions.MultivariateNormal(loc=x, scale_tril=scale_tril), \
-            torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+            torch.diagonal(diffusions, dim1=-2, dim2=-1)[..., 0]
+            # torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
 
 
 class Whirlpool(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
-        self.noise_type = "diagonal"
+        self.noise_type = "additive"
         self.sde_type = "ito"
         if dims != 2:
             raise RuntimeError("Whirlpool only applicable to 2D.")
@@ -77,17 +78,18 @@ class Whirlpool(BasePriorSDE):
             scale = 1.
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.diag_embed(torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions))
+        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.u(x))
         return \
             distributions.MultivariateNormal(loc=x + scale * drifts, scale_tril=scale_tril), \
-            torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+            torch.diagonal(diffusions, dim1=-2, dim2=-1)[..., 0]
+            # torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
 
 
 class Hill(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
-        self.noise_type = "diagonal"
+        self.noise_type = "additive"
         self.sde_type = "ito"
         self.fac = 1.
         self.delta = 0.35
@@ -111,17 +113,18 @@ class Hill(BasePriorSDE):
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.diag_embed(torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions))
+        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x[..., 0], x[..., 1]))
         return \
             distributions.MultivariateNormal(loc=x + drifts, scale_tril=scale_tril), \
-            torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+            torch.diagonal(diffusions, dim1=-2, dim2=-1)[..., 0]
+            # torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
 
 
 class Maze(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
-        self.noise_type = "diagonal"
+        self.noise_type = "additive"
         self.sde_type = "ito"
         self.fac = 1.
         self.delta = 0.01
@@ -257,7 +260,7 @@ class Spiral(BasePriorSDE):
         if dims != 2:
             raise RuntimeError("Hill only applicable to 2D.")
 
-        self.noise_type = "diagonal"
+        self.noise_type = "additive"
         self.sde_type = "ito"
         self.fac = 5.
         self.scaling_factor = 4.
@@ -295,7 +298,7 @@ class Spiral(BasePriorSDE):
 class SDE:
     sde_type = 'ito'
 
-    def __init__(self, drift, diffusion, noise_type="diagonal"):
+    def __init__(self, drift, diffusion, noise_type="additive"):
         super().__init__()
         self.noise_type = noise_type
         self.f = lambda t, x: drift(x, t)
