@@ -4,7 +4,7 @@ number_gpus=$1
 visible_devices=$2
 
 hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES="$visible_devices" dlf28/pytorch_lightning \
-	python main.py \
+	python -W ignore main.py \
 	  --drift=score_network \
 	  --diffusion=scalar \
 	  --dataset=toy_experiment_blobs_2d \
@@ -15,10 +15,10 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --num_epochs=25 \
 	  --eval_frequency=20 \
 	  --learning_rate=3e-3 \
-	  --num_steps=10 \
-	  --delta_t=0.05 \
+	  --num_steps=20 \
+	  --delta_t=0.025 \
 	  --num_iter=10 \
-	  --batch_repeats=10 \
+	  --batch_repeats=20 \
 	  --sigma=0.001 \
     --gpus="$number_gpus" #\
     # -p \

@@ -7,19 +7,20 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	python -W ignore main.py \
 	  --drift=score_network \
 	  --diffusion=scalar \
-    --dataset=double_well_right \
-    --prior=double_well_left \
-    --prior_sde=hill \
+	  --dataset=gaussian_5d_right \
+	  --prior=gaussian_5d_right \
+	  --prior_sde=brownian \
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
-	  --num_epochs=50 \
-	  --eval_frequency=10 \
-	  --learning_rate=3e-3 \
-	  --num_steps=20 \
-	  --delta_t=0.025 \
-	  --num_iter=5 \
-	  --batch_repeats=20 \
+	  --num_epochs=25 \
+	  --eval_frequency=200 \
+	  --learning_rate=1e-2 \
+	  --num_steps=5 \
+	  --delta_t=0.1 \
+	  --num_iter=100 \
 	  --sigma=0.001 \
-	  --max_gamma=0.3 \
-    --gpus="$number_gpus"
-# Used in 2021-11-18; 19:05
+	  --solver=em \
+    --gpus="$number_gpus" #\
+    # -p \
+    # --restore_date=2021-11-16\
+    # --restore_time=18:05
