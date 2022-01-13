@@ -691,6 +691,94 @@ class Checker(BaseDataGenerator):
         return self.plot_2d_to_2d(output, model, metrics)
 
 
+class Gaussian5DLeft(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 3000
+        self.n_test: int = 3000
+        self.observed_dims: int = 5
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -1., -1., -1., -1.]),
+                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_train // 3,))
+        self.xs_train = blob_1
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -1., -1., -1., -1.]),
+                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_test // 3,))
+        self.xs_test = blob_1
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        z_values_backward = output.z_values_backward.cpu().detach().numpy()
+
+        if z_values_backward.shape[-1] == 5:
+
+            fig_obj: Figure = figure.Figure(figsize=(15, 15))
+            gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
+                                      left=0.1, right=0.9, bottom=0.1, top=0.9,
+                                      wspace=0.1, hspace=0.1)
+
+            self.plot_objective(gs, fig_obj, metrics)
+            mean_prior = np.mean(metrics.mean_prior.cpu().detach().numpy(), -1)
+            mean_data = np.mean(metrics.mean_data.cpu().detach().numpy(), -1)
+            std_prior = np.mean(metrics.std_prior.cpu().detach().numpy(), -1)
+            std_data = np.mean(metrics.std_data.cpu().detach().numpy(), -1)
+
+            epochs_array = np.arange(0, mean_prior.shape[0])
+            indices = np.arange(0, mean_prior.shape[0])
+
+            fig: Figure = figure.Figure(figsize=(15, 15))
+            ax: Axes = fig.add_subplot(1, 1, 1)
+
+            if len(indices) > 1:
+                ax.vlines(5, indices[0], indices[-1], color="k", linestyles="dotted")
+
+            ax.plot(epochs_array[indices], mean_prior[indices], c="r", label="Prior mean", linestyle="solid")
+            ax.plot(epochs_array[indices], mean_data[indices], c="b", label="Data mean", linestyle="solid")
+            ax.plot(epochs_array[indices], std_prior[indices], c="r", label="Prior std", linestyle="dashed")
+            ax.plot(epochs_array[indices], std_data[indices], c="b", label="Data std", linestyle="dashed")
+            ax.set_xlabel("Epoch")
+            ax.legend(loc=2)
+            ax.grid(True)
+
+            return [fig_obj, fig], \
+                   ["objective", "forwards", "backwards", "z_0", "z_1"]
+
+        else:
+            raise ValueError("Dims must be 5")
+
+
+class Gaussian5DRight(Gaussian5DLeft):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 3000
+        self.n_test: int = 3000
+        self.observed_dims: int = 5
+
+        self.x_lims = [[-10, 10], [-10, 10]]
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+        # Train
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 1., 1., 1., 1.]),
+                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_train // 3,))
+        self.xs_train = blob_1
+
+        # Test
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 1., 1., 1., 1.]),
+                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_test // 3,))
+        self.xs_test = blob_1
+
+
 datasets_dict = {
     "gaussian": Gaussian,
     # Experiments
@@ -705,5 +793,8 @@ datasets_dict = {
     "swiss_roll": Swiss,
     "moon": Moon,
     "circle": Circle,
-    "checker": Checker
+    "checker": Checker,
+    # Bounds experiment
+    "gaussian_5d_left": Gaussian5DLeft,
+    "gaussian_5d_right": Gaussian5DRight,
 }
