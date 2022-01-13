@@ -1,6 +1,6 @@
 import torch
-from .step_funs import rossler_step, em_step
-from .noise import rossler_noise, em_noise
+from .step_funs import rossler_step, em_step, srk_additive_step
+from .noise import rossler_noise, em_noise, srk_additive_noise
 
 
 def integrate(sde, y0, ts, method='rossler'):
@@ -10,6 +10,9 @@ def integrate(sde, y0, ts, method='rossler'):
     elif method == 'em':
         step = em_step
         noise = em_noise(y0.shape[-1], y0.shape[:-1], y0.device)
+    elif method == 'srk':
+        step = srk_additive_step
+        noise = srk_additive_noise(y0.shape[-1], y0.shape[:-1], y0.device)
     else:
         raise ValueError('Unknown method: {}'.format(method))
 

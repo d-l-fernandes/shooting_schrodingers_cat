@@ -74,3 +74,49 @@ def em_step(x: torch.Tensor,
     x_2_0 = x + drift_1 * delta_t + diff_1_beta
 
     return x_2_0
+
+
+def srk_additive_step(x: torch.Tensor,
+            t: float,
+            noise: Tuple[torch.Tensor, torch.Tensor],
+            delta_t: float,
+            sde) -> torch.tensor:
+
+    STAGES = 2
+    C0 = (0, 3 / 4)
+    C1 = (1, 0)
+    A0 = (
+        (),
+        (3 / 4,),
+    )
+    B0 = (
+        (),
+        (3 / 2,),
+    )
+
+    alpha = (1 / 3, 2 / 3)
+    beta1 = (1, 0)
+    beta2 = (-1, 1)
+
+    dt = delta_t
+    rdt = 1 / dt
+    I_k, I_k0 = noise
+
+    y1 = x
+    H0 = []
+
+    for i in range(STAGES):
+        H0i = x
+        for j in range(i):
+            f = sde.f(t + C0[j] * dt, H0[j])
+            g_weight = B0[i][j] * I_k0 * rdt
+            g_prod = torch.einsum("...ab,...b->...a", sde.g(t + C1[j] * dt, x), g_weight)
+            H0i = H0i + A0[i][j] * f * dt + g_prod
+        H0.append(H0i)
+
+        f = sde.f(t + C0[i] * dt, H0i)
+        g_weight = beta1[i] * I_k + beta2[i] * I_k0 * rdt
+        g_prod = torch.einsum("...ab,...b->...a", sde.g(t + C1[i] * dt, x), g_weight)
+        y1 = y1 + alpha[i] * f * dt + g_prod
+
+    return y1
