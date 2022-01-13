@@ -14,11 +14,11 @@ flags.DEFINE_bool("restore", False, "Whether to restore previous params from che
 flags.DEFINE_bool("predict", False, "Whether to only do predictions.", short_name="p")
 flags.DEFINE_string("restore_date", "", "Which date folder to restore checkpoint from. If empty, will get newest")
 flags.DEFINE_string("restore_time", "", "Which time folder to restore checkpoint from. If empty, will get newest")
+flags.DEFINE_integer("restore_epoch", 1, "Which epoch to restore.")
 
 flags.DEFINE_integer("gpus", 1, "Number of GPUs to use",
                      lower_bound=0)
 flags.DEFINE_integer("eval_frequency", 10, "How often to evaluate the model.")
-flags.DEFINE_integer("restore_epoch", 1, "Which epoch to restore.")
 
 FLAGS = flags.FLAGS
 
@@ -63,6 +63,9 @@ class ModelTrainer:
             if not os.path.exists(d):
                 os.makedirs(d)
 
+        # Save flags
+        FLAGS.append_flags_into_file(parent_folder + "flags.txt")
+
         # Model checkpoint manager
         self.checkpoint_callback = ModelCheckpoint(dirpath=self.checkpoint_folder,
                                                    filename='{epoch}',
@@ -71,7 +74,8 @@ class ModelTrainer:
                                                    )
 
         # Logger
-        tb_logger = pl_loggers.TensorBoardLogger(self.summary_folder)
+        # tb_logger = pl_loggers.TensorBoardLogger(self.summary_folder)
+        csv_logger = pl_loggers.CSVLogger(self.summary_folder, version=0)
 
         if FLAGS.restore or FLAGS.predict:
             resume_from_checkpoint = self.checkpoint_folder + f"epoch={FLAGS.restore_epoch}.ckpt"
@@ -85,7 +89,8 @@ class ModelTrainer:
                 gpus=FLAGS.gpus,
                 max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
                 check_val_every_n_epoch=FLAGS.eval_frequency,
-                logger=tb_logger,
+                # logger=[tb_logger, csv_logger],
+                logger=csv_logger,
                 strategy="ddp",
                 log_every_n_steps=2
                 # stochastic_weight_avg=True,
@@ -97,7 +102,8 @@ class ModelTrainer:
                 gpus=FLAGS.gpus,
                 max_epochs=FLAGS.num_epochs * FLAGS.num_iter * 2,
                 check_val_every_n_epoch=FLAGS.eval_frequency,
-                logger=tb_logger,
+                # logger=[tb_logger, csv_logger],
+                logger=csv_logger,
                 log_every_n_steps=2
                 # stochastic_weight_avg=True,
             )
