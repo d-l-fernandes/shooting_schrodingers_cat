@@ -7,7 +7,7 @@ Tensor = torch.Tensor
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-flags.DEFINE_enum("diffusion", "nn_space_diagonal",
+flags.DEFINE_enum("diffusion", "scalar",
                   ["scalar",
                    "constant_diagonal",
                    "nn_time_diagonal", "nn_time",
@@ -47,11 +47,11 @@ class Scalar(BaseDiffusion):
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         gamma = self.gamma_t(t)
         if len(gamma.shape) == 0:
-            # return torch.diag_embed(torch.ones_like(x, device=x.device) * gamma)
-            return torch.ones_like(x, device=x.device) * gamma
+            return torch.diag_embed(torch.ones_like(x, device=x.device) * gamma)
+            # return torch.ones_like(x, device=x.device) * gamma
         else:
-            # return torch.diag_embed(torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma))
-            return torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma)
+            return torch.diag_embed(torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma))
+            # return torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma)
 
 
 class ConstantDiagonal(BaseDiffusion):
