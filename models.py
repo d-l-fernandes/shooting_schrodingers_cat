@@ -1,3 +1,4 @@
+from __future__ import annotations
 import gc
 from functools import reduce
 from typing import NamedTuple, List, Union
@@ -19,13 +20,13 @@ from stein import kernel
 flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
-flags.DEFINE_integer("batch_repeats", 1, "Optimizer steps per batch", lower_bound=1)
+flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
 
 flags.DEFINE_float("delta_t", 0.05, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
-flags.DEFINE_enum("solver", "srk", ["em", "srk"], "Solver to use")
+flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
 
 flags.DEFINE_bool("same_diffusion", False, "Whether to use same diffusion.")
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
@@ -34,18 +35,26 @@ FLAGS = flags.FLAGS
 
 Tensor = torch.Tensor
 
-solver_scale = {"em": 1., "srk": 1.5}
+solver_scale = {"em": 1., "srk": 1.5, "rossler": 2.}
 
 
 class Metrics(NamedTuple):
     wasserstein_prior: Tensor
     wasserstein_data: Tensor
     wasserstein_total: Tensor
+    mean_prior: Tensor
+    mean_data: Tensor
+    std_prior: Tensor
+    std_data: Tensor
 
-    def __add__(self, other):
+    def __add__(self, other: Metrics):
         return Metrics(torch.cat((self.wasserstein_prior, other.wasserstein_prior)),
                        torch.cat((self.wasserstein_data, other.wasserstein_data)),
                        torch.cat((self.wasserstein_total, other.wasserstein_total)),
+                       torch.cat((self.mean_prior, other.mean_prior)),
+                       torch.cat((self.mean_data, other.mean_data)),
+                       torch.cat((self.std_prior, other.std_prior)),
+                       torch.cat((self.std_data, other.std_data)),
                        )
 
 
@@ -74,7 +83,12 @@ class Model(pl.LightningModule):
         self.automatic_optimization = False
         self.metrics = Metrics(torch.tensor([]),
                                torch.tensor([]),
-                               torch.tensor([]))
+                               torch.tensor([]),
+                               torch.tensor([]),
+                               torch.tensor([]),
+                               torch.tensor([]),
+                               torch.tensor([]),
+                               )
         self.wasserstein_loss = geomloss.SamplesLoss()
         self.save_hyperparameters()
 
@@ -152,27 +166,28 @@ class Model(pl.LightningModule):
             # xs = integrate(sde, x_0, time_values, method="em")
             xs = torchsde.sdeint(sde, x_0, time_values, method="em", adaptive=False, dt=FLAGS.delta_t)
         else:
-            xs = torchsde.sdeint(sde, x_0, time_values, method=FLAGS.solver, adaptive=False, dt=FLAGS.delta_t)
-            #  xs = integrate(sde, x_0, time_values, method="rossler")
+            # xs = torchsde.sdeint(sde, x_0, time_values, method=FLAGS.solver, adaptive=False, dt=FLAGS.delta_t)
+            # xs = integrate(sde, x_0, time_values, method="rossler")
+            xs = integrate(sde, x_0, time_values, method=FLAGS.solver)
         return xs
 
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
         q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
-        s_is = torch.tile(q_prob.sample().unsqueeze(2), (1, 1, FLAGS.num_samples, 1)).view(
-            (ys.shape[0]-1, FLAGS.num_samples * ys.shape[1], ys.shape[-1]))
+        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1))# .view(
+            # (ys.shape[0]-1, FLAGS.num_samples * ys.shape[1], ys.shape[-1]))
 
         xs = torch.empty_like(s_is, device=self.device)
 
         for i in range(ys.shape[0]-1):
-            xs[i, :] = self.solve(s_is[i, :], sde, self.time_values[i:i+2])[-1]
+            xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
 
-        s_is = s_is.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
-        xs = xs.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
+        # s_is = s_is.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
+        # xs = xs.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
 
-        s_is = s_is.permute(2, 0, 1, 3)
-        xs = xs.permute(2, 0, 1, 3)
+        # s_is = s_is.permute(2, 0, 1, 3)
+        # xs = xs.permute(2, 0, 1, 3)
 
         # Likelihood
         # index = torch.randint(FLAGS.num_samples, (1,))[0]
@@ -194,15 +209,17 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
-        ksd = ksd * FLAGS.delta_t**solver_scale[FLAGS.solver]
-        # ksd = torch.einsum("a,a...->a...",
-        #                    (scales / FLAGS.delta_t**0.5)**2,
-        #                    ksd)
+        # ksd = ksd * FLAGS.delta_t**solver_scale[FLAGS.solver]
+        ksd_scaled = torch.einsum("a,a...->a...",
+                           # (scales / FLAGS.delta_t**0.5)**2,
+                           scales**solver_scale[FLAGS.solver],
+                           ksd)
 
         # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
         # ksd = ksd * scale.unsqueeze(0).detach()
-        obj = (likelihood - variational_kl - ksd)
+        obj = (likelihood - variational_kl - ksd_scaled)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
+                   "ksd_scaled": ksd_scaled.mean(),
                    "obj": obj.mean()}
         return -obj.mean(), metrics
 
@@ -280,7 +297,12 @@ class Model(pl.LightningModule):
 
         metrics = Metrics(torch.tensor([prior_wasserstein]),
                           torch.tensor([data_wasserstein]),
-                          torch.tensor([total_wasserstein]))
+                          torch.tensor([total_wasserstein]),
+                          final_output.z_values_backward[:, -1].mean(0, keepdim=True).cpu(),
+                          final_output.z_values_forward[:, -1].mean(0, keepdim=True).cpu(),
+                          final_output.z_values_backward[:, -1].std(0, keepdim=True).cpu(),
+                          final_output.z_values_forward[:, -1].std(0, keepdim=True).cpu(),
+                          )
         if not self.trainer.sanity_checking:
             log_metrics = {"wasserstein_prior": prior_wasserstein, "wasserstein_data": data_wasserstein,
                            "wasserstein_total": total_wasserstein}
