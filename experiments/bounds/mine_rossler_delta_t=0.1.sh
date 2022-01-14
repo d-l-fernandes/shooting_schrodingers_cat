@@ -19,7 +19,7 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --delta_t=0.1 \
 	  --num_iter=10 \
 	  --sigma=0.001 \
-	  --solver=srk \
+	  --solver=rossler \
     --gpus="$number_gpus" #\
     # -p \
     # --restore_date=2021-11-16\

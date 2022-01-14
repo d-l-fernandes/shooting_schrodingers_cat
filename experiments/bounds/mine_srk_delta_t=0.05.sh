@@ -8,17 +8,18 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --drift=score_network \
 	  --diffusion=scalar \
 	  --dataset=gaussian_5d_right \
-	  --prior=gaussian_5d_right \
+	  --prior=gaussian_5d_left \
 	  --prior_sde=brownian \
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
-	  --num_epochs=25 \
-	  --eval_frequency=200 \
-	  --learning_rate=1e-2 \
+	  --num_epochs=20 \
+	  --eval_frequency=20 \
+	  --learning_rate=1e-3 \
 	  --num_steps=10 \
 	  --delta_t=0.05 \
-	  --num_iter=100 \
+	  --num_iter=10 \
 	  --sigma=0.001 \
+	  --solver=srk \
     --gpus="$number_gpus" #\
     # -p \
     # --restore_date=2021-11-16\

@@ -15,9 +15,9 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --num_epochs=20 \
 	  --eval_frequency=20 \
 	  --learning_rate=1e-3 \
-	  --num_steps=5 \
-	  --delta_t=0.1 \
-	  --num_iter=10 \
+	  --num_steps=10 \
+	  --delta_t=0.005 \
+	  --num_iter=100 \
 	  --sigma=0.001 \
 	  --solver=srk \
     --gpus="$number_gpus" #\

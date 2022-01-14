@@ -13,13 +13,14 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
 	  --num_epochs=50 \
-	  --eval_frequency=10 \
+	  --eval_frequency=20 \
 	  --learning_rate=3e-3 \
 	  --num_steps=20 \
 	  --delta_t=0.025 \
-	  --num_iter=5 \
+	  --num_iter=10 \
 	  --batch_repeats=20 \
 	  --sigma=0.001 \
 	  --max_gamma=0.3 \
+	  --solver=rossler \
     --gpus="$number_gpus"
 # Used in 2021-11-18; 19:05
