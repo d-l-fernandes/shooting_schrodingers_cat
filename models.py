@@ -10,10 +10,9 @@ import torch.autograd.functional as autograd
 from absl import flags
 from matplotlib.figure import Figure
 import geomloss
-import torchsde
 
 from sde import drifts, diffusions, prior_sdes, variational, priors
-from weak_solver.sdeint import integrate
+from weak_solver.sdeint import integrate, integrate_parallel_time_steps
 from stein import kernel
 
 
@@ -26,7 +25,7 @@ flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_boun
 flags.DEFINE_float("delta_t", 0.05, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
-flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
+flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
 
 flags.DEFINE_bool("same_diffusion", False, "Whether to use same diffusion.")
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
@@ -161,38 +160,35 @@ class Model(pl.LightningModule):
             self.data_type = "data"
 
     @staticmethod
-    def solve(x_0: Tensor, sde, time_values) -> Tensor:
+    def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False) -> Tensor:
         if FLAGS.do_dsb:
-            # xs = integrate(sde, x_0, time_values, method="em")
-            xs = torchsde.sdeint(sde, x_0, time_values, method="em", adaptive=False, dt=FLAGS.delta_t)
+            xs = integrate(sde, x_0, time_values, method="em")
+            # xs = torchsde.sdeint(sde, x_0, time_values, method="em", adaptive=False, dt=FLAGS.delta_t)
         else:
             # xs = torchsde.sdeint(sde, x_0, time_values, method=FLAGS.solver, adaptive=False, dt=FLAGS.delta_t)
-            # xs = integrate(sde, x_0, time_values, method="rossler")
-            xs = integrate(sde, x_0, time_values, method=FLAGS.solver)
+            if parallel_time_steps:
+                xs = integrate_parallel_time_steps(sde, x_0, time_values, method=FLAGS.solver)
+            else:
+                xs = integrate(sde, x_0, time_values, method=FLAGS.solver)
         return xs
 
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
         q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
-        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1))# .view(
-            # (ys.shape[0]-1, FLAGS.num_samples * ys.shape[1], ys.shape[-1]))
+        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1)).permute(1, 0, 2, 3)
 
         xs = torch.empty_like(s_is, device=self.device)
 
-        for i in range(ys.shape[0]-1):
-            xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
+        time_values = torch.tile(self.time_values.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1),
+                                 (1, FLAGS.num_samples, ys.shape[1], 1)).to(ys.device)
+        xs = self.solve(s_is, sde, time_values, parallel_time_steps=True)
+        # for i in range(ys.shape[0]-1):
+        #     xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
 
-        # s_is = s_is.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
-        # xs = xs.view((ys.shape[0]-1, ys.shape[1], FLAGS.num_samples, ys.shape[-1]))
-
-        # s_is = s_is.permute(2, 0, 1, 3)
-        # xs = xs.permute(2, 0, 1, 3)
-
+        s_is = s_is.permute(1, 0, 2, 3)
+        xs = xs.permute(1, 0, 2, 3)
         # Likelihood
-        # index = torch.randint(FLAGS.num_samples, (1,))[0]
-        # likelihood_dist = self.likelihood(xs[index])
-        # likelihood = likelihood_dist.log_prob(ys[1:])
         likelihood_dist = self.likelihood(xs)
         likelihood = likelihood_dist.log_prob(ys[1:]).mean(0)
 
@@ -209,14 +205,13 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
-        # ksd = ksd * FLAGS.delta_t**solver_scale[FLAGS.solver]
-        ksd_scaled = torch.einsum("a,a...->a...",
-                           # (scales / FLAGS.delta_t**0.5)**2,
-                           scales**solver_scale[FLAGS.solver],
-                           ksd)
+        ksd_scaled = ksd * FLAGS.delta_t**solver_scale[FLAGS.solver]
+        # ksd_scaled = torch.einsum("a,a...->a...",
+        #                    # (scales / FLAGS.delta_t**0.5)**2,
+        #                    # scales**solver_scale[FLAGS.solver],
+        #                    FLAGS.delta_t**solver_scale[FLAGS.solver],
+        #                    ksd)
 
-        # scale = torch.max(torch.abs(likelihood), dim=0)[0] / torch.max(ksd, dim=0)[0]
-        # ksd = ksd * scale.unsqueeze(0).detach()
         obj = (likelihood - variational_kl - ksd_scaled)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
                    "ksd_scaled": ksd_scaled.mean(),
@@ -308,7 +303,7 @@ class Model(pl.LightningModule):
                            "wasserstein_total": total_wasserstein}
             self.log("eval", log_metrics)
             self.log("wasserstein_total", total_wasserstein)
-            self.metrics += metrics
+        self.metrics += metrics
 
         if self.trainer.sanity_checking:
             self.make_plot_figs(final_output, "sanity")
