@@ -36,6 +36,9 @@ datasets_list = [
                     "moon",
                     "circle",
                     "checker",
+                    # Bounds experiment
+                    "gaussian_5d_left",
+                    "gaussian_5d_right",
 ]
 
 flags.DEFINE_integer("batch_size", 10, "Batch Size.")
@@ -705,20 +708,20 @@ class Gaussian5DLeft(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -1., -1., -1., -1.]),
-                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_train // 3,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.] * self.observed_dims),
+                                                  scale_tril=0.3 * torch.eye(self.observed_dims)).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -1., -1., -1., -1.]),
-                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_test // 3,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.] * self.observed_dims),
+                                                  scale_tril=0.3 * torch.eye(self.observed_dims)).sample((self.n_test,))
         self.xs_test = blob_1
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         z_values_backward = output.z_values_backward.cpu().detach().numpy()
 
-        if z_values_backward.shape[-1] == 5:
+        if z_values_backward.shape[-1] == self.observed_dims:
 
             fig_obj: Figure = figure.Figure(figsize=(15, 15))
             gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
@@ -738,21 +741,24 @@ class Gaussian5DLeft(BaseDataGenerator):
             ax: Axes = fig.add_subplot(1, 1, 1)
 
             if len(indices) > 1:
-                ax.vlines(5, indices[0], indices[-1], color="k", linestyles="dotted")
+                ax.hlines(2, indices[0], indices[-1], color="k", linestyles="solid")
+                ax.hlines(-2, indices[0], indices[-1], color="k", linestyles="solid")
+                ax.hlines(0.5, indices[0], indices[-1], color="0.4", linestyles="solid")
+                ax.hlines(0.3, indices[0], indices[-1], color="0.4", linestyles="solid")
 
-            ax.plot(epochs_array[indices], mean_prior[indices], c="r", label="Prior mean", linestyle="solid")
-            ax.plot(epochs_array[indices], mean_data[indices], c="b", label="Data mean", linestyle="solid")
-            ax.plot(epochs_array[indices], std_prior[indices], c="r", label="Prior std", linestyle="dashed")
-            ax.plot(epochs_array[indices], std_data[indices], c="b", label="Data std", linestyle="dashed")
+            ax.plot(epochs_array[indices], mean_prior[indices], c="r", label="Prior mean", linestyle="dashed")
+            ax.plot(epochs_array[indices], mean_data[indices], c="b", label="Data mean", linestyle="dashed")
+            ax.plot(epochs_array[indices], std_prior[indices], c="r", label="Prior std", linestyle="dotted")
+            ax.plot(epochs_array[indices], std_data[indices], c="b", label="Data std", linestyle="dotted")
             ax.set_xlabel("Epoch")
             ax.legend(loc=2)
             ax.grid(True)
 
             return [fig_obj, fig], \
-                   ["objective", "forwards", "backwards", "z_0", "z_1"]
+                   ["objective", "means_stds"]
 
         else:
-            raise ValueError("Dims must be 5")
+            raise ValueError(f"Dims must be {self.observed_dims}")
 
 
 class Gaussian5DRight(Gaussian5DLeft):
@@ -769,13 +775,13 @@ class Gaussian5DRight(Gaussian5DLeft):
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 1., 1., 1., 1.]),
-                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_train // 3,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([2.] * self.observed_dims),
+                                                  scale_tril=0.5*torch.eye(self.observed_dims)).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 1., 1., 1., 1.]),
-                                                  scale_tril=0.5*torch.eye(5)).sample((self.n_test // 3,))
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([2.] * self.observed_dims),
+                                                  scale_tril=0.5*torch.eye(self.observed_dims)).sample((self.n_test,))
         self.xs_test = blob_1
 
 
