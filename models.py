@@ -92,10 +92,12 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # Time
-        self.final_t = FLAGS.delta_t * FLAGS.num_steps
+        # self.final_t = FLAGS.delta_t * FLAGS.num_steps
+        self.final_t = 0.5
         self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
                                           device=self.device)
-        self.delta_t = torch.tensor(FLAGS.delta_t, device=self.device)
+        # self.delta_t = torch.tensor(FLAGS.delta_t, device=self.device)
+        self.delta_t = torch.tensor(self.final_t / FLAGS.num_steps, device=self.device)
 
         # SDE
         self.drift_forward: drifts.BaseDrift = \
@@ -327,14 +329,16 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.Adam([
-            {"params": self.diffusion_backward.parameters()}, {"params": self.drift_backward.parameters()},
-            {"params": self.q_backwards.parameters()},
-        ], lr=FLAGS.learning_rate)
-        optim_forward = torch.optim.Adam([
-            {"params": self.diffusion_forward.parameters()}, {"params": self.drift_forward.parameters()},
-            {"params": self.q_forwards.parameters()},
-        ], lr=FLAGS.learning_rate)
+        optim_backward = torch.optim.AdamW([
+            {"params": self.diffusion_backward.parameters(), "lr": FLAGS.learning_rate},
+            {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
+            {"params": self.q_backwards.parameters(), "lr": 1e-3},
+        ])
+        optim_forward = torch.optim.AdamW([
+            {"params": self.diffusion_forward.parameters(), "lr": FLAGS.learning_rate},
+            {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
+            {"params": self.q_forwards.parameters(), "lr": 1e-3},
+        ])
         return optim_backward, optim_forward
 
     def make_plot_figs(self, output: Output,
