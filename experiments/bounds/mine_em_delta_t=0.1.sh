@@ -12,12 +12,12 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --prior_sde=brownian \
 	  --prior_dist=gaussian \
 	  --batch_size=1500 \
-	  --num_epochs=20 \
+	  --num_epochs=30 \
 	  --eval_frequency=20 \
-	  --learning_rate=1e-3 \
+	  --learning_rate=5e-5 \
 	  --num_steps=5 \
-	  --delta_t=0.1 \
 	  --num_iter=10 \
+	  --batch_repeats=40 \
 	  --sigma=0.001 \
 	  --solver=em \
     --gpus="$number_gpus" #\
