@@ -52,9 +52,10 @@ class Linear(BaseDrift):
 class NNSpace(BaseDrift):
     def __init__(self, input_size: int, output_size: int):
         super().__init__(input_size, output_size)
-        intermediate_size = 10 * input_size
+        intermediate_size = 20 * input_size
         self.nn = torch.nn.Sequential(
             torch.nn.Linear(self.input_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, self.output_size)
         )

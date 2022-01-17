@@ -639,12 +639,12 @@ class Circle(BaseDataGenerator):
             self.prior_dataset.n_test = self.n_test
             self.prior_dataset.setup(stage)
         # Train
-        x, y = datasets.make_circles(self.n_train, factor=0.5, noise=0.1)
+        x, y = datasets.make_circles(self.n_train, factor=0.5, noise=0.05)
         self.xs_train = torch.tensor(x) * self.scaling_factor
         self.xs_train = self.xs_train.float()
 
         # Test
-        x, y = datasets.make_circles(self.n_test, factor=0.5, noise=0.1)
+        x, y = datasets.make_circles(self.n_test, factor=0.5, noise=0.05)
         self.xs_test = torch.tensor(x) * self.scaling_factor
         self.xs_test = self.xs_test.float()
 
@@ -698,8 +698,8 @@ class Gaussian5DLeft(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 5000
+        self.n_test: int = 5000
         self.observed_dims: int = 5
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -723,12 +723,12 @@ class Gaussian5DLeft(BaseDataGenerator):
 
         if z_values_backward.shape[-1] == self.observed_dims:
 
-            fig_obj: Figure = figure.Figure(figsize=(15, 15))
-            gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
-                                      left=0.1, right=0.9, bottom=0.1, top=0.9,
-                                      wspace=0.1, hspace=0.1)
+            # fig_obj: Figure = figure.Figure(figsize=(15, 15))
+            # gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
+            #                           left=0.1, right=0.9, bottom=0.1, top=0.9,
+            #                           wspace=0.1, hspace=0.1)
 
-            self.plot_objective(gs, fig_obj, metrics)
+            # self.plot_objective(gs, fig_obj, metrics)
             mean_prior = np.mean(metrics.mean_prior.cpu().detach().numpy(), -1)
             mean_data = np.mean(metrics.mean_data.cpu().detach().numpy(), -1)
             std_prior = np.mean(metrics.std_prior.cpu().detach().numpy(), -1)
@@ -754,8 +754,10 @@ class Gaussian5DLeft(BaseDataGenerator):
             ax.legend(loc=2)
             ax.grid(True)
 
-            return [fig_obj, fig], \
-                   ["objective", "means_stds"]
+            # return [fig_obj, fig], \
+            #        ["objective", "means_stds"]
+            return [fig], \
+                   ["means_stds"]
 
         else:
             raise ValueError(f"Dims must be {self.observed_dims}")
@@ -765,8 +767,8 @@ class Gaussian5DRight(Gaussian5DLeft):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 5000
+        self.n_test: int = 5000
         self.observed_dims: int = 5
 
         self.x_lims = [[-10, 10], [-10, 10]]
