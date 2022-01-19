@@ -90,8 +90,10 @@ class NNGeneral(BaseDrift):
         )
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        if len(t.shape) != len(x.shape):
+        if len(t.shape) == 0:
             t = (torch.ones_like(x, device=x.device) * t)[..., 0:1]
+        else:
+            t = (torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), t))[..., 0:1]
         x = torch.cat((x, t), -1)
         return self.nn(x)
 
@@ -107,8 +109,10 @@ class NNGeneralMNIST(BaseDrift):
         )
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        if len(t.shape) != len(x.shape):
+        if len(t.shape) == 0:
             t = (torch.ones_like(x, device=x.device) * t)[..., 0:1]
+        else:
+            t = (torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), t))[..., 0:1]
         x = torch.cat((x, t), -1)
         return self.nn(x)
 
@@ -143,8 +147,10 @@ class ScoreNetwork(torch.nn.Module):
     def forward(self, x, t):
         if len(x.shape) == 1:
             x = x.unsqueeze(0)
-        if len(t.shape) != len(x.shape):
+        if len(t.shape) == 0:
             t = (torch.ones_like(x, device=x.device) * t)[..., 0:1]
+        else:
+            t = (torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), t))[..., 0:1]
 
         temb = get_timestep_embedding(t, self.temb_dim)
         temb = self.t_encoder(temb)

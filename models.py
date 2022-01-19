@@ -22,7 +22,6 @@ flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
 
-flags.DEFINE_float("delta_t", 0.05, "Time-step size.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
@@ -92,11 +91,9 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # Time
-        # self.final_t = FLAGS.delta_t * FLAGS.num_steps
         self.final_t = 0.5
         self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
                                           device=self.device)
-        # self.delta_t = torch.tensor(FLAGS.delta_t, device=self.device)
         self.delta_t = torch.tensor(self.final_t / FLAGS.num_steps, device=self.device)
 
         # SDE
@@ -182,37 +179,26 @@ class Model(pl.LightningModule):
 
         xs = torch.empty_like(s_is, device=self.device)
 
-        time_values = torch.tile(self.time_values.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1),
-                                 (1, FLAGS.num_samples, ys.shape[1], 1)).to(ys.device)
-        xs = self.solve(s_is, sde, time_values, parallel_time_steps=True)
-        # for i in range(ys.shape[0]-1):
-        #     xs[:, i] = self.solve(s_is[:, i], sde, self.time_values[i:i+2])[-1]
+        xs = self.solve(s_is, sde, self.time_values.to(ys.device), parallel_time_steps=True)
 
         s_is = s_is.permute(1, 0, 2, 3)
         xs = xs.permute(1, 0, 2, 3)
         # Likelihood
         likelihood_dist = self.likelihood(xs)
-        likelihood = likelihood_dist.log_prob(ys[1:]).mean(0)
+        likelihood = likelihood_dist.log_prob(ys[1:]).sum(-1).mean(0)
 
         # Variational KL
         prior_dist = self.p(ys[:-1])
-        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
+        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).sum(-1)
 
         # Variational KSD
         s_is = s_is.permute(1, 2, 0, 3)
         xs = xs.permute(1, 2, 0, 3)
-        transition_density, scales = self.prior_sde.transition_density(
-            self.time_values.to(ys.device), s_is, self.forward)
-        scales = scales[:, 0, 0]
-        grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
+        grad_transition = self.prior_sde.transition_density(
+            self.time_values.to(ys.device), s_is, xs, self.forward)
 
-        ksd = kernel.stein_discrepancy(xs, grad_transition, FLAGS.sigma, FLAGS.delta_t, scales)
-        ksd_scaled = ksd * FLAGS.delta_t**solver_scale[FLAGS.solver]
-        # ksd_scaled = torch.einsum("a,a...->a...",
-        #                    # (scales / FLAGS.delta_t**0.5)**2,
-        #                    # scales**solver_scale[FLAGS.solver],
-        #                    FLAGS.delta_t**solver_scale[FLAGS.solver],
-        #                    ksd)
+        ksd = kernel.stein_discrepancy(xs, grad_transition)
+        ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
 
         obj = (likelihood - variational_kl - ksd_scaled)
         metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
@@ -228,7 +214,7 @@ class Model(pl.LightningModule):
         drifts_term = \
             sde.f(time_values[:-1], ys[:-1]) - other_sde.f(time_values[:-1], ys[:-1]) + \
             other_sde.f(time_values[1:], ys[1:])
-        obj = (obj + FLAGS.delta_t * drifts_term) ** 2
+        obj = (obj + self.delta_t * drifts_term) ** 2
         metrics = {"obj": obj.mean()}
         return obj.mean(), metrics
 

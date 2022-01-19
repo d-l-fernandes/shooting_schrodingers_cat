@@ -1,6 +1,10 @@
 import torch
-from .step_funs import rossler_step, em_step, srk_additive_step, rossler_step_parallel
-from .noise import rossler_noise, em_noise, srk_additive_noise, rossler_noise_parallel
+from .step_funs import em_step, srk_additive_step, rossler_step
+from .step_funs import em_step_parallel, srk_additive_step_parallel, rossler_step_parallel
+from .noise import em_noise, srk_additive_noise, rossler_noise
+from .noise import em_noise_parallel, srk_additive_noise_parallel, rossler_noise_parallel
+# from .noise import rossler_noise, em_noise, srk_additive_noise, rossler_noise_parallel
+# from .step_funs import rossler_step, em_step, srk_additive_step, rossler_step_parallel
 
 
 def integrate(sde, y0, ts, method='rossler'):
@@ -36,11 +40,11 @@ def integrate_parallel_time_steps(sde, y0, ts, method='rossler'):
         step = rossler_step_parallel
         noise = rossler_noise_parallel(y0.shape[-1], y0.shape[:-1], y0.device)
     elif method == 'em':
-        step = em_step
-        noise = em_noise(y0.shape[-1], y0.shape[:-1], y0.device)
+        step = em_step_parallel
+        noise = em_noise_parallel(y0.shape[-1], y0.shape[:-1], y0.device)
     elif method == 'srk':
-        step = srk_additive_step
-        noise = srk_additive_noise(y0.shape[-1], y0.shape[:-1], y0.device)
+        step = srk_additive_step_parallel
+        noise = srk_additive_noise_parallel(y0.shape[-1], y0.shape[:-1], y0.device)
     else:
         raise ValueError('Unknown method: {}'.format(method))
 
