@@ -10,10 +10,12 @@ from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
 from matplotlib.figure import Figure
 from torch.utils.data import DataLoader
+from torchvision import transforms, utils
 from typing import Optional, List, Tuple, Any
 from pytorch_lightning import LightningDataModule
 from pytorch_lightning.trainer.supporters import CombinedLoader
 from sklearn import datasets
+from torchvision import datasets as vision_datasets
 
 from models import Output, Model, Metrics
 from sde import prior_sdes
@@ -39,6 +41,8 @@ datasets_list = [
                     # Bounds experiment
                     "gaussian_5d_left",
                     "gaussian_5d_right",
+                    # MNIST,
+                    "mnist"
 ]
 
 flags.DEFINE_integer("batch_size", 10, "Batch Size.")
@@ -84,11 +88,11 @@ class BaseDataGenerator(LightningDataModule):
         if self.prior_dataset is not None:
             loaders = {
                 "prior": DataLoader(
-                    self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=0, pin_memory=True),
-                "data": DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0, pin_memory=True)}
+                    self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=0),
+                "data": DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
-            return DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0, pin_memory=True)
+            return DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0)
 
     def val_dataloader(self):
         if self.prior_dataset is not None:
@@ -630,8 +634,8 @@ class Circle(BaseDataGenerator):
         self.n_test: int = 3000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
-        self.scaling_factor = 7.
+        self.x_lims = [[-7.5, 7.5], [-7.5, 7.5]]
+        self.scaling_factor = 5.
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
@@ -673,7 +677,7 @@ class Checker(BaseDataGenerator):
         x1 = np.random.rand(self.n_train) * 4 - 2
         x2_ = np.random.rand(self.n_train) - np.random.randint(0, 2, self.n_train) * 2
         x2 = x2_ + (np.floor(x1) % 2)
-        x = np.concatenate([x1[:, None], x2[:, None]], 1) * 7.5
+        x = np.concatenate([x1[:, None], x2[:, None]], 1) * self.scaling_factor
         self.xs_train = torch.from_numpy(x).float()
 
         x_max = np.max(x[:, 0])
@@ -686,7 +690,7 @@ class Checker(BaseDataGenerator):
         x1 = np.random.rand(self.n_test) * 4 - 2
         x2_ = np.random.rand(self.n_test) - np.random.randint(0, 2, self.n_test) * 2
         x2 = x2_ + (np.floor(x1) % 2)
-        x = np.concatenate([x1[:, None], x2[:, None]], 1) * 7.5
+        x = np.concatenate([x1[:, None], x2[:, None]], 1) * self.scaling_factor
         self.xs_test = torch.from_numpy(x).float()
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
@@ -787,6 +791,70 @@ class Gaussian5DRight(Gaussian5DLeft):
         self.xs_test = blob_1
 
 
+class MNIST(BaseDataGenerator):
+    def __init__(self, prior_dataset: BaseDataGenerator = None):
+        super().__init__(prior_dataset)
+        # Data properties
+        self.n_train: int = 10000
+        self.n_test: int = 3000
+        self.observed_dims: int = 784
+
+        self.num_images_eval = 64
+
+        self.transform = torch.nn.Sequential(transforms.Normalize((0.1307,), (0.3081,)))
+
+    def prepare_data(self):
+        vision_datasets.MNIST("datasets/", True, download=True)
+        vision_datasets.MNIST("datasets/", False, download=True)
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.prior_dataset is not None:
+            self.prior_dataset.n_train = self.n_train
+            self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.setup(stage)
+        # Train
+        images_train = vision_datasets.MNIST("datasets/", True)
+
+        indices = torch.randperm(60000)[:self.n_train]
+        images_train = self.transform(images_train.data.float())[indices]
+        self.xs_train = images_train.reshape(-1, self.observed_dims)
+
+        # Test
+        images_test = vision_datasets.MNIST("datasets/", False)
+        indices = torch.randperm(10000)[:self.n_test]
+        # self.test_labels = torch.tensor(images_test.targets)[indices]
+        images_test = self.transform(images_test.data.float())[indices]
+        self.xs_test = images_test.reshape(-1, self.observed_dims)
+
+    def plot_results(self, output: Output, model: Model, metrics: Metrics) \
+            -> Tuple[List[Figure], List[str]]:
+        z_values_forward = output.z_values_forward.cpu().detach()
+        x_gen = z_values_forward[-1]
+
+        # fig_obj: Figure = figure.Figure(figsize=(15, 15))
+        # gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
+        #                           left=0.1, right=0.9, bottom=0.1, top=0.9,
+        #                           wspace=0.1, hspace=0.1)
+
+        # self.plot_objective(gs, fig_obj, metrics)
+
+        indices = np.random.choice(x_gen.shape[0], self.num_images_eval)
+        images = torch.tile((x_gen[indices].reshape(-1, 28, 28)).unsqueeze(1), (1, 3, 1, 1))
+
+        grid_image = utils.make_grid(images, nrow=int(np.sqrt(self.num_images_eval)))
+        grid_image = grid_image.permute(1, 2, 0)[..., 0]
+
+        fig: Figure = figure.Figure(figsize=(15, 15))
+        ax: Axes = fig.add_subplot(1, 1, 1)
+
+        ax.imshow(grid_image.numpy())
+
+        # return [fig_obj, fig], \
+        #        ["objective", "samples"]
+        return [fig], \
+               ["samples"]
+
+
 datasets_dict = {
     "gaussian": Gaussian,
     # Experiments
@@ -805,4 +873,6 @@ datasets_dict = {
     # Bounds experiment
     "gaussian_5d_left": Gaussian5DLeft,
     "gaussian_5d_right": Gaussian5DRight,
+    # MNIST,
+    "mnist": MNIST,
 }
