@@ -31,7 +31,8 @@ class Gaussian(BasePrior):
         self.sigma = FLAGS.sigma
 
     def forward(self, x: Tensor) -> distributions.Distribution:
-        return distributions.MultivariateNormal(loc=x, scale_tril=torch.diag_embed(torch.ones_like(x) * self.sigma))
+        # return distributions.MultivariateNormal(loc=x, scale_tril=torch.diag_embed(torch.ones_like(x) * self.sigma))
+        return distributions.Normal(loc=x, scale=torch.ones_like(x) * self.sigma)
 
 
 class LearnableGaussian(BasePrior):

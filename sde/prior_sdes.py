@@ -32,8 +32,12 @@ class BasePriorSDE:
     def g(t: Tensor, x: Tensor) -> Tensor:
         return torch.diag_embed(torch.ones_like(x, device=x.device))
 
-    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
+    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         raise NotImplementedError
+
+    @staticmethod
+    def grad_log_multivariate_normal(mean: Tensor, std: Tensor, x: Tensor) -> Tensor:
+        return torch.einsum("a,a...->a...", -1. / std**2, (x - mean))
 
 
 class Brownian(BasePriorSDE):
@@ -45,14 +49,10 @@ class Brownian(BasePriorSDE):
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return torch.zeros_like(x, device=x.device)
 
-    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
+    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
-        return \
-            distributions.MultivariateNormal(loc=x, scale_tril=scale_tril), \
-            torch.diagonal(diffusions, dim1=-2, dim2=-1)[..., 0]
-            # torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+        return self.grad_log_multivariate_normal(x, torch.sqrt(delta_ts) * diffusions, y)
 
 
 class Whirlpool(BasePriorSDE):
@@ -71,19 +71,15 @@ class Whirlpool(BasePriorSDE):
         y = 3.5 * torch.cat((-x[..., 1].unsqueeze(-1), x[..., 0].unsqueeze(-1)), dim=-1)
         return y
 
-    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
+    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         if forward:
             scale = -1.
         else:
             scale = 1.
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.u(x))
-        return \
-            distributions.MultivariateNormal(loc=x + scale * drifts, scale_tril=scale_tril), \
-            torch.diagonal(diffusions, dim1=-2, dim2=-1)[..., 0]
-            # torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+        return self.grad_log_multivariate_normal(x + scale * drifts, torch.sqrt(delta_ts) * diffusions, y)
 
 
 class Hill(BasePriorSDE):
@@ -110,15 +106,11 @@ class Hill(BasePriorSDE):
         v = -(2 * y) + self.fac * 2 * y * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta ** 2
         return torch.cat((u.unsqueeze(-1), v.unsqueeze(-1)), dim=-1)
 
-    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
+    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x[..., 0], x[..., 1]))
-        return \
-            distributions.MultivariateNormal(loc=x + drifts, scale_tril=scale_tril), \
-            torch.diagonal(diffusions, dim1=-2, dim2=-1)[..., 0]
-            # torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+        return self.grad_log_multivariate_normal(x + drifts, torch.sqrt(delta_ts) * diffusions, y)
 
 
 class Maze(BasePriorSDE):
@@ -245,7 +237,7 @@ class Maze(BasePriorSDE):
 
         return torch.cat(((u1_1 + u2_1 + u3_1).unsqueeze(-1), (v1_1 + v2_1 + v3_1).unsqueeze(-1)), dim=-1)
 
-    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
+    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
         scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
@@ -286,13 +278,13 @@ class Spiral(BasePriorSDE):
     def grad_u(self, x) -> Tensor:
         return -jacobian(lambda x_grad: self._u(x_grad).sum(), x)
 
-    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> Tuple[distributions.Distribution, Tensor]:
+    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
         scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x))
         return distributions.MultivariateNormal(
-            loc=x + drifts, scale_tril=scale_tril), torch.diagonal(scale_tril, dim1=-2, dim2=-1)[..., 0]
+            loc=x + drifts, scale_tril=scale_tril)
 
 
 class SDE:

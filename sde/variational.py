@@ -42,8 +42,10 @@ class Gaussian(BaseVariational):
 
     def forward(self, x: Tensor) -> distributions.Distribution:
         mean = self.mean_nn(x)
-        out = torch.diag_embed(torch.ones_like(x, device=x.device) * self.sigma)
-        return distributions.MultivariateNormal(loc=mean, scale_tril=out)
+        # out = torch.diag_embed(torch.ones_like(x, device=x.device) * self.sigma)
+        # return distributions.MultivariateNormal(loc=mean, scale_tril=out)
+        out = torch.ones_like(x, device=x.device) * self.sigma
+        return distributions.Normal(loc=mean, scale=out)
         # out = self.std_nn(self.nn(x))
         # out = out.reshape(out.shape[:-1] + (self.output_size,) + (self.output_size,))
         # diag = torch.diagonal(out, dim1=-1, dim2=-2)
