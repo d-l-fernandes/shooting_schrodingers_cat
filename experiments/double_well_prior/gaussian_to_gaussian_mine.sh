@@ -17,9 +17,8 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	  --learning_rate=5e-5 \
 	  --num_steps=20 \
 	  --num_iter=10 \
-	  --batch_repeats=30 \
+	  --batch_repeats=40 \
 	  --sigma=0.001 \
 	  --max_gamma=0.3 \
 	  --solver=rossler \
     --gpus="$number_gpus"
-# Used in 2021-11-18; 19:05
