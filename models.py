@@ -165,22 +165,23 @@ class Model(pl.LightningModule):
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
-        q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
-        s_is = torch.tile(q_prob.sample().unsqueeze(0), (FLAGS.num_samples, 1, 1, 1)).permute(1, 0, 2, 3)
+        # q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
+        # s_is = torch.tile(q_prob.sample().unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
+        s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
 
-        xs = torch.empty_like(s_is, device=self.device)
-
-        xs = self.solve(s_is, sde, self.time_values.to(ys.device), parallel_time_steps=True)
+        time_values = self.time_values.to(ys.device).to(ys.dtype)
+        xs = self.solve(s_is, sde, time_values, parallel_time_steps=True)
 
         s_is = s_is.permute(1, 0, 2, 3)
         xs = xs.permute(1, 0, 2, 3)
+
         # Likelihood
         likelihood_dist = self.likelihood(xs)
         likelihood = likelihood_dist.log_prob(ys[1:]).sum(-1).mean(0)
 
         # Variational KL
-        prior_dist = self.p(ys[:-1])
-        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist).sum(-1)
+        # prior_dist = self.p(ys[:-1], self.sigma)
+        # variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
 
         # Variational KSD
         s_is = s_is.permute(1, 2, 0, 3)
@@ -191,8 +192,13 @@ class Model(pl.LightningModule):
         ksd = kernel.stein_discrepancy(xs, grad_transition)
         ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
 
-        obj = (likelihood - variational_kl - ksd_scaled)
-        metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
+
+        # obj = (likelihood - variational_kl - ksd_scaled)
+        # metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
+        #            "ksd_scaled": ksd_scaled.mean(),
+        #            "obj": obj.mean()}
+        obj = (likelihood - ksd_scaled)
+        metrics = {"likelihood": likelihood.mean(),  "ksd": ksd.mean(),
                    "ksd_scaled": ksd_scaled.mean(),
                    "obj": obj.mean()}
         return -obj.mean(), metrics
