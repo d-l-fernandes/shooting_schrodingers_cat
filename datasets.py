@@ -39,8 +39,8 @@ datasets_list = [
                     "circle",
                     "checker",
                     # Bounds experiment
-                    "gaussian_5d_left",
-                    "gaussian_5d_right",
+                    "gaussian_bound_left",
+                    "gaussian_bound_right",
                     # MNIST,
                     "mnist"
 ]
@@ -698,7 +698,7 @@ class Checker(BaseDataGenerator):
         return self.plot_2d_to_2d(output, model, metrics)
 
 
-class Gaussian5DLeft(BaseDataGenerator):
+class GaussianBoundLeft(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
@@ -727,12 +727,12 @@ class Gaussian5DLeft(BaseDataGenerator):
 
         if z_values_backward.shape[-1] == self.observed_dims:
 
-            # fig_obj: Figure = figure.Figure(figsize=(15, 15))
-            # gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
-            #                           left=0.1, right=0.9, bottom=0.1, top=0.9,
-            #                           wspace=0.1, hspace=0.1)
+            fig_obj: Figure = figure.Figure(figsize=(15, 15))
+            gs = fig_obj.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
+                                      left=0.1, right=0.9, bottom=0.1, top=0.9,
+                                      wspace=0.1, hspace=0.1)
 
-            # self.plot_objective(gs, fig_obj, metrics)
+            self.plot_objective(gs, fig_obj, metrics)
             mean_prior = np.mean(metrics.mean_prior.cpu().detach().numpy(), -1)
             mean_data = np.mean(metrics.mean_data.cpu().detach().numpy(), -1)
             std_prior = np.mean(metrics.std_prior.cpu().detach().numpy(), -1)
@@ -758,16 +758,16 @@ class Gaussian5DLeft(BaseDataGenerator):
             ax.legend(loc=2)
             ax.grid(True)
 
-            # return [fig_obj, fig], \
-            #        ["objective", "means_stds"]
-            return [fig], \
-                   ["means_stds"]
+            return [fig_obj, fig], \
+                   ["objective", "means_stds"]
+            # return [fig], \
+            #        ["means_stds"]
 
         else:
             raise ValueError(f"Dims must be {self.observed_dims}")
 
 
-class Gaussian5DRight(Gaussian5DLeft):
+class GaussianBoundRight(GaussianBoundLeft):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
@@ -871,8 +871,8 @@ datasets_dict = {
     "circle": Circle,
     "checker": Checker,
     # Bounds experiment
-    "gaussian_5d_left": Gaussian5DLeft,
-    "gaussian_5d_right": Gaussian5DRight,
+    "gaussian_bound_left": GaussianBoundLeft,
+    "gaussian_bound_right": GaussianBoundRight,
     # MNIST,
     "mnist": MNIST,
 }
