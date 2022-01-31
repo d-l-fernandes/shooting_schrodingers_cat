@@ -176,8 +176,8 @@ class Model(pl.LightningModule):
         xs = xs.permute(1, 0, 2, 3)
 
         # Likelihood
-        likelihood_dist = self.likelihood(xs)
-        likelihood = likelihood_dist.log_prob(ys[1:]).sum(-1).mean(0)
+        likelihood_dist = self.likelihood(xs, self.sigma)
+        likelihood = likelihood_dist.log_prob(ys[1:].unsqueeze(0)).mean(0)
 
         # Variational KL
         # prior_dist = self.p(ys[:-1], self.sigma)
@@ -186,8 +186,9 @@ class Model(pl.LightningModule):
         # Variational KSD
         s_is = s_is.permute(1, 2, 0, 3)
         xs = xs.permute(1, 2, 0, 3)
-        grad_transition = self.prior_sde.transition_density(
-            self.time_values.to(ys.device), s_is, xs, self.forward)
+        transition_density = self.prior_sde.transition_density(
+            time_values, s_is, self.forward)
+        grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition)
         ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
