@@ -38,20 +38,16 @@ class Scalar(BaseDiffusion):
         g_diff = self.g_max - self.g_min
         self.gamma_t = \
             lambda t: (self.g_min + 2 * g_diff * t / self.final_t) * (t < self.final_t / 2) + \
-                      ((2 * self.g_max - self.g_min) - 2 * g_diff * t / self.final_t) * (t >= self.final_t / 2)
+                      ((2 * self.g_max - self.g_min) - 2 * g_diff * t / self.final_t) * (t >= self.final_t / 2 )
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        gamma = torch.tensor(self.gamma_t(t), device=x.device)
-        return gamma
-        # if len(gamma.shape) == 0:
-        #     return torch.diag_embed(torch.ones_like(x, device=x.device) * gamma)
-        #     # return torch.ones_like(x, device=x.device) * gamma
-        # elif len(gamma.shape) == 1:
-        #     return torch.diag_embed(torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma))
-        #     # return torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma)
-        # else:
-        #     return torch.diag_embed(torch.ones_like(x, device=x.device) * gamma)
-        #     # return torch.diag_embed(torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma))
+        gamma = self.gamma_t(t)
+        # return torch.ones_like(x, device=x.device) * gamma
+        # return gamma
+        if len(gamma.shape) == 0:
+            return torch.ones_like(x, device=x.device) * gamma
+        else:
+            return torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma)
 
 
 diffusions_dict = {
