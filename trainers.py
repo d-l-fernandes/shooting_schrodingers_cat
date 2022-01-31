@@ -49,11 +49,10 @@ class ModelTrainer:
         parent_folder += f"data_{FLAGS.dataset}/"
         parent_folder += f"prior_{FLAGS.prior}/"
 
-        # if FLAGS.same_diffusion:
-        #     parent_folder += f"drift_{FLAGS.drift}/diffusion_{FLAGS.diffusion}_same/"
-        # else:
-        #     parent_folder += f"drift_{FLAGS.drift}/diffusion_{FLAGS.diffusion}/"
         parent_folder += f"solver={FLAGS.solver}_numSteps={FLAGS.num_steps}/"
+
+        if FLAGS.do_dsb:
+            parent_folder += "dsb/"
 
         self.summary_folder = parent_folder + "summary/"
         self.results_folder = parent_folder + "results/"
