@@ -7,7 +7,8 @@ Tensor = torch.Tensor
 
 flags.DEFINE_enum("variational", "gaussian",
                   [
-                      "gaussian"
+                      "gaussian",
+                      "gaussian_mnist"
                   ],
                   "Variational distribution to use.")
 FLAGS = flags.FLAGS
@@ -37,25 +38,41 @@ class Gaussian(BaseVariational):
             torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
             torch.nn.Linear(intermediate_size, self.output_size),
         )
-        # self.std_nn = torch.nn.Linear(intermediate_size, self.output_size**2)
-        # self.std_nn = torch.nn.Linear(intermediate_size, self.output_size)
 
     def forward(self, x: Tensor) -> distributions.Distribution:
         mean = self.mean_nn(x)
-        # out = torch.diag_embed(torch.ones_like(x, device=x.device) * self.sigma)
-        # return distributions.MultivariateNormal(loc=mean, scale_tril=out)
-        out = torch.ones_like(x, device=x.device) * self.sigma
-        return distributions.Normal(loc=mean, scale=out)
-        # out = self.std_nn(self.nn(x))
-        # out = out.reshape(out.shape[:-1] + (self.output_size,) + (self.output_size,))
-        # diag = torch.diagonal(out, dim1=-1, dim2=-2)
-        # out = out - torch.diag_embed(diag) + (torch.diag_embed(functional.softplus(diag) + 1e-4))
-        # return distributions.MultivariateNormal(loc=mean, scale_tril=out.tril())
-        # out = functional.softplus(self.std_nn(self.nn(x))) + 1e-8
+        # out = torch.ones_like(x, device=x.device) * self.sigma
         # out = functional.softplus(self.std_nn(x)) + 1e-8
-        # return distributions.MultivariateNormal(loc=mean, scale_tril=torch.diag_embed(out))
+        out = torch.sigmoid(self.std_nn(x)) + 1e-8
+        return distributions.Independent(distributions.Normal(loc=mean, scale=out), 1)
+
+
+class GaussianMNIST(BaseVariational):
+    def __init__(self, input_size: int, output_size: int, sigma: float):
+        super().__init__(input_size, output_size, sigma)
+        intermediate_size = 200
+        self.mean_nn = torch.nn.Sequential(
+            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, self.output_size),
+        )
+        self.std_nn = torch.nn.Sequential(
+            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, self.output_size),
+        )
+
+    def forward(self, x: Tensor) -> distributions.Distribution:
+        mean = self.mean_nn(x)
+        # out = torch.ones_like(x, device=x.device) * self.sigma
+        # out = functional.softplus(self.std_nn(x)) + 1e-8
+        out = torch.sigmoid(self.std_nn(x)) + 1e-8
+        return distributions.Independent(distributions.Normal(loc=mean, scale=out), 1)
 
 
 variational_dict = {
     "gaussian": Gaussian,
+    "gaussian_mnist": GaussianMNIST,
 }
