@@ -46,7 +46,7 @@ datasets_list = [
 ]
 
 flags.DEFINE_integer("batch_size", 10, "Batch Size.")
-flags.DEFINE_integer("dims", 2, "Number of dims.")
+# flags.DEFINE_integer("dims", 2, "Number of dims.")
 flags.DEFINE_enum("prior", "gaussian", datasets_list, "Prior to use.")
 flags.DEFINE_enum("dataset", "toy_experiment_blobs_2d", datasets_list, "Dataset to use.")
 
@@ -235,7 +235,8 @@ class Gaussian(BaseDataGenerator):
         # Data properties
         self.n_train: int = 3000
         self.n_test: int = 3000
-        self.observed_dims: int = FLAGS.dims
+        # self.observed_dims: int = FLAGS.dims
+        self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
 
@@ -305,6 +306,7 @@ class Blobs3D(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5., 5.]),
@@ -395,6 +397,7 @@ class DoubleWellLeft(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.]),
@@ -423,6 +426,7 @@ class DoubleWellBiModalLeft(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., -0.7]),
@@ -455,6 +459,7 @@ class DoubleWellRight(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 0.]),
@@ -483,6 +488,7 @@ class SpiralOne(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([0., 0.]),
@@ -511,6 +517,7 @@ class SpiralTwo(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.5, 6.]),
@@ -542,6 +549,7 @@ class SCurve(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.n_train = self.n_train
             self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         x, y = datasets.make_s_curve(self.n_train, noise=0.1)
@@ -575,6 +583,7 @@ class Swiss(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.n_train = self.n_train
             self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         x, y = datasets.make_swiss_roll(self.n_train, noise=0.1)
@@ -608,6 +617,7 @@ class Moon(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.n_train = self.n_train
             self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         x, y = datasets.make_moons(self.n_train, noise=0.1)
@@ -641,6 +651,7 @@ class Circle(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.n_train = self.n_train
             self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         x, y = datasets.make_circles(self.n_train, factor=0.5, noise=0.05)
@@ -672,6 +683,7 @@ class Checker(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.n_train = self.n_train
             self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         x1 = np.random.rand(self.n_train) * 4 - 2
@@ -704,12 +716,13 @@ class GaussianBoundLeft(BaseDataGenerator):
         # Data properties
         self.n_train: int = 5000
         self.n_test: int = 5000
-        self.observed_dims: int = 5
+        self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.] * self.observed_dims),
@@ -773,12 +786,13 @@ class GaussianBoundRight(GaussianBoundLeft):
         # Data properties
         self.n_train: int = 5000
         self.n_test: int = 5000
-        self.observed_dims: int = 5
+        self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([2.] * self.observed_dims),
@@ -795,8 +809,8 @@ class MNIST(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 10000
-        self.n_test: int = 3000
+        self.n_train: int = 60000
+        self.n_test: int = 10000
         self.observed_dims: int = 784
 
         self.num_images_eval = 64
@@ -811,6 +825,7 @@ class MNIST(BaseDataGenerator):
         if self.prior_dataset is not None:
             self.prior_dataset.n_train = self.n_train
             self.prior_dataset.n_test = self.n_test
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         images_train = vision_datasets.MNIST("datasets/", True)
