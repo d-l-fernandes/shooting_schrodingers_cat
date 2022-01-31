@@ -83,9 +83,9 @@ class NNGeneral(BaseDrift):
         super().__init__(input_size, output_size)
         intermediate_size = 20 * output_size
         self.nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.ReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.ReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.ReLU(),
             torch.nn.Linear(intermediate_size, self.output_size)
         )
 
@@ -98,10 +98,11 @@ class NNGeneral(BaseDrift):
 class NNGeneralMNIST(BaseDrift):
     def __init__(self, input_size: int, output_size: int):
         super().__init__(input_size, output_size)
-        intermediate_size = 100
+        intermediate_size = 200
         self.nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
             torch.nn.Linear(intermediate_size, self.output_size)
         )
 
@@ -117,7 +118,6 @@ class NNGeneralMNIST(BaseDrift):
 
 class ScoreNetwork(torch.nn.Module):
 
-    # def __init__(self, encoder_layers=None, pos_dim=16, decoder_layers=None, x_dim=2):
     def __init__(self, input_size: int, output_size: int):
         super().__init__()
         decoder_layers = [128, 128]
