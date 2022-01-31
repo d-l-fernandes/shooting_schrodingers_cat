@@ -1,5 +1,4 @@
 from __future__ import annotations
-import gc
 from functools import reduce
 from typing import NamedTuple, List, Union
 
@@ -191,8 +190,15 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition)
-        ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
+        delta_ts = time_values[1:] - time_values[:-1]
+        diff_values = sde.g(time_values[:-1], s_is)[:, 0, 0, 0]
 
+        # ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
+        ksd_scaled = torch.einsum("a...,a...->a...", (delta_ts * diff_values ** 2)**2 / (2 * self.sigma**2), ksd)
+        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values ** 2, ksd)
+        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values, ksd)
+        # ksd_scaled = torch.einsum("a,a...->a...", delta_ts**0.5 * diff_values, ksd)
+        # ksd_scaled = ksd
 
         # obj = (likelihood - variational_kl - ksd_scaled)
         # metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
