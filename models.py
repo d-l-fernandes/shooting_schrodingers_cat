@@ -22,11 +22,11 @@ flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
 
+flags.DEFINE_float("final_time", 1., "Final time.")
 flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
 
-flags.DEFINE_bool("same_diffusion", False, "Whether to use same diffusion.")
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 
 FLAGS = flags.FLAGS
@@ -91,10 +91,13 @@ class Model(pl.LightningModule):
         self.save_hyperparameters()
 
         # Time
-        self.final_t = 0.5
+        self.final_t = FLAGS.final_time
         self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
                                           device=self.device)
-        self.delta_t = torch.tensor(self.final_t / FLAGS.num_steps, device=self.device)
+        self.delta_t = self.final_t / FLAGS.num_steps
+
+        self.sigma = FLAGS.sigma
+        # self.sigma = self.delta_t**0.5
 
         # SDE
         self.drift_forward: drifts.BaseDrift = \
@@ -106,9 +109,6 @@ class Model(pl.LightningModule):
         self.diffusion_backward: diffusions.BaseDiffusion = \
             diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims, self.final_t)
 
-        if FLAGS.same_diffusion:
-            self.diffusion_backward = self.diffusion_forward
-
         self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion_forward)
         self.backward_sde = prior_sdes.SDE(self.drift_backward, self.diffusion_backward)
 
@@ -118,9 +118,9 @@ class Model(pl.LightningModule):
 
         # Variational q
         self.q_backwards: variational.BaseVariational \
-            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, FLAGS.sigma)
+            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, self.sigma)
         self.q_forwards: variational.BaseVariational \
-            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, FLAGS.sigma)
+            = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims, self.sigma)
         self.likelihood: priors.BasePrior \
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
         self.p: priors.BasePrior \
@@ -128,33 +128,26 @@ class Model(pl.LightningModule):
 
         self.solve_sde = None
         self.optim_sde = None
-        self.non_optim_sde = None
         self.optim_q = None
         self.data_type = None
 
         self.get_drift_diffusion(self.first, self.forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
-        # Sigma exponent
-        self.ipfp_iteration = 0
-
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
             self.solve_sde = self.prior_sde
             self.optim_sde = self.backward_sde
-            self.non_optim_sde = self.prior_sde
             self.optim_q = self.q_backwards
             self.data_type = "prior"
         elif self.forward:
             self.solve_sde = self.forward_sde
             self.optim_sde = self.backward_sde
-            self.non_optim_sde = self.forward_sde
             self.optim_q = self.q_backwards
             self.data_type = "prior"
         else:
             self.solve_sde = self.backward_sde
             self.optim_sde = self.forward_sde
-            self.non_optim_sde = self.backward_sde
             self.optim_q = self.q_forwards
             self.data_type = "data"
 
@@ -162,9 +155,7 @@ class Model(pl.LightningModule):
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False) -> Tensor:
         if FLAGS.do_dsb:
             xs = integrate(sde, x_0, time_values, method="em")
-            # xs = torchsde.sdeint(sde, x_0, time_values, method="em", adaptive=False, dt=FLAGS.delta_t)
         else:
-            # xs = torchsde.sdeint(sde, x_0, time_values, method=FLAGS.solver, adaptive=False, dt=FLAGS.delta_t)
             if parallel_time_steps:
                 xs = integrate_parallel_time_steps(sde, x_0, time_values, method=FLAGS.solver)
             else:
@@ -210,7 +201,7 @@ class Model(pl.LightningModule):
         ys = torch.flip(ys, [0])
 
         obj = ys[:-1] - ys[1:]
-        time_values = torch.tile(self.time_values.to(ys.device)[:, None, None], (1, ys.shape[1], 1))
+        time_values = self.time_values.to(ys.device).to(ys.dtype)
         drifts_term = \
             sde.f(time_values[:-1], ys[:-1]) - other_sde.f(time_values[:-1], ys[:-1]) + \
             other_sde.f(time_values[1:], ys[1:])
@@ -245,7 +236,7 @@ class Model(pl.LightningModule):
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad(set_to_none=True)
             if FLAGS.do_dsb:
-                loss, metrics = self.loss_dsb(xs, self.optim_sde, self.non_optim_sde)
+                loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
             else:
                 loss, metrics = self.loss(xs, self.optim_sde)
             self.manual_backward(loss)
@@ -262,8 +253,6 @@ class Model(pl.LightningModule):
 
             self.get_drift_diffusion(self.first, self.forward)
             torch.cuda.empty_cache()
-        if (self.current_epoch+1) % (FLAGS.num_iter*2) == 0:
-            self.ipfp_iteration += 1
 
     def validation_step(self, batch, batch_idx):
         x_prior = batch["prior"]
@@ -304,13 +293,11 @@ class Model(pl.LightningModule):
         checkpoint["metrics"] = self.metrics
         checkpoint["first"] = self.first
         checkpoint["forward"] = self.forward
-        checkpoint["ipfp_iteration"] = self.ipfp_iteration
 
     def on_load_checkpoint(self, checkpoint):
         self.metrics = checkpoint["metrics"]
         self.first = checkpoint["first"]
         self.forward = checkpoint["forward"]
-        self.ipfp_iteration = checkpoint["ipfp_iteration"]
 
         self.get_drift_diffusion(self.first, self.forward)
 
