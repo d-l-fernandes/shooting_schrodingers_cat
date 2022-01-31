@@ -16,18 +16,13 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
 
     h = h.unsqueeze(-1)
     dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
-    h = h[..., 0]
-    dx2d2kxy = -1 / h**4 * torch.sum(diffs**2, -1)
-    dx2d2kxy *= kxy
-    dx2d2kxy += 1 / h**2 * theta.shape[-1] * kxy
-
-    trace_dx2d2lxy = dx2d2kxy
+    trace_dx2d2kxy = torch.einsum("...a,...->...a", -1 / h**4 * diffs**2 + 1 / h**2, kxy).sum(-1)
 
     first_term = torch.einsum("...ab,...ac,...cb->...ac", p_grad, kxy, p_grad)
     second_term = torch.einsum("...ab,...acb->...ac", p_grad, -dxdkxy)
     third_term = torch.einsum("...acb,...cb->...ac", dxdkxy, p_grad)
 
-    u = first_term + second_term + third_term + trace_dx2d2lxy
+    u = first_term + second_term + third_term + trace_dx2d2kxy
 
     # return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
     u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
