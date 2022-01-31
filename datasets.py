@@ -73,8 +73,8 @@ class BaseDataGenerator(LightningDataModule):
         # Test arrays
         self.xs_test: Tensor = torch.ones((self.n_test, self.observed_dims))
 
-        torch.manual_seed(42)
-        np.random.seed(42)
+        # torch.manual_seed(42)
+        # np.random.seed(42)
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
