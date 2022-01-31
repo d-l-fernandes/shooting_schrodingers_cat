@@ -9,13 +9,8 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor) -> Tensor:
     pairwise_dists = torch.sum(diffs**2, -1)
 
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
-    # h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
-    h = pairwise_dists[..., indices[0], indices[1]].mean(dim=-1)
-    # h = \
-    #     sigma * torch.sqrt(
-    #         h / torch.log(torch.tensor(theta.shape[-2] + 1, device=theta.device))).unsqueeze(-1).unsqueeze(-1).detach()
+    h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
     h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1).detach() # / np.log(theta.shape[-2] + 1)
-    # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1) / np.log(theta.shape[-2] + 1)
 
     kxy = torch.exp(-pairwise_dists / h**2 / 2)
 
