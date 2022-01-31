@@ -17,6 +17,7 @@ flags.DEFINE_enum("prior_sde", "brownian",
                       "spiral"
                   ],
                   "Prior to use.")
+flags.DEFINE_float("hill_scale", 1., "Scale of hill potential.")
 FLAGS = flags.FLAGS
 
 
@@ -99,12 +100,12 @@ class Hill(BasePriorSDE):
     def u(self, x: Tensor, y: Tensor) -> Tensor:
         z = (5 / 2.0) * (x ** 2 - 1 ** 2) ** 2 + y ** 2 + self.fac \
             * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta
-        return z
+        return FLAGS.hill_scale * z
 
     def grad_u(self, x: Tensor, y: Tensor) -> Tensor:
         u = -(10 * x * (x ** 2 - 1)) + self.fac * 2 * x * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta ** 2
         v = -(2 * y) + self.fac * 2 * y * torch.exp(-(x ** 2 + y ** 2) / self.delta) / self.delta ** 2
-        return torch.cat((u.unsqueeze(-1), v.unsqueeze(-1)), dim=-1)
+        return FLAGS.hill_scale * torch.cat((u.unsqueeze(-1), v.unsqueeze(-1)), dim=-1)
 
     def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
         delta_ts = ts[1:] - ts[:-1]
