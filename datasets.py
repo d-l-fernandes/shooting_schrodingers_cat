@@ -270,6 +270,7 @@ class Blobs2D(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
+            self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
