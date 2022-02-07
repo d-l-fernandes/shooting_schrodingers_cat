@@ -83,9 +83,9 @@ class NNGeneral(BaseDrift):
         super().__init__(input_size, output_size)
         intermediate_size = 20 * output_size
         self.nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.ReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.ReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.ReLU(),
+            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, self.output_size)
         )
 
@@ -130,17 +130,17 @@ class ScoreNetwork(torch.nn.Module):
         self.net = MLP(2 * t_enc_dim,
                        layer_widths=decoder_layers + [output_size],
                        activate_final=False,
-                       activation_fn=torch.nn.LeakyReLU())
+                       activation_fn=torch.nn.SiLU())
 
         self.t_encoder = MLP(pos_dim,
                              layer_widths=encoder_layers + [t_enc_dim],
                              activate_final=False,
-                             activation_fn=torch.nn.LeakyReLU())
+                             activation_fn=torch.nn.SiLU())
 
         self.x_encoder = MLP(input_size,
                              layer_widths=encoder_layers + [t_enc_dim],
                              activate_final=False,
-                             activation_fn=torch.nn.LeakyReLU())
+                             activation_fn=torch.nn.SiLU())
 
     def forward(self, x, t):
         t = (torch.ones_like(x, device=x.device) * t)[..., 0:1]
