@@ -22,7 +22,8 @@ flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bou
 flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
 
 flags.DEFINE_float("final_time", 1., "Final time.")
-flags.DEFINE_float("learning_rate", 0.0001, "Learning rate of the optimizer.")
+flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
+flags.DEFINE_float("learning_rate_var", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
 
@@ -71,7 +72,7 @@ class Output(NamedTuple):
 
 
 class Model(pl.LightningModule):
-    def __init__(self, observed_dims: int, first: bool, forward: bool, results_folder: str):
+    def __init__(self, observed_dims: int, first: bool, forward: bool, results_folder: str, max_diffusion: float):
         super().__init__()
 
         self.first = first
@@ -102,12 +103,10 @@ class Model(pl.LightningModule):
         # SDE
         self.drift_forward: drifts.BaseDrift = \
             drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
-        self.diffusion_forward: diffusions.BaseDiffusion = \
-            diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims, self.final_t)
+        self.diffusion_forward = diffusions.Scalar(observed_dims, observed_dims, self.final_t, max_diffusion)
         self.drift_backward: drifts.BaseDrift = \
             drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
-        self.diffusion_backward: diffusions.BaseDiffusion = \
-            diffusions.diffusions_dict[FLAGS.diffusion](observed_dims, observed_dims, self.final_t)
+        self.diffusion_backward = diffusions.Scalar(observed_dims, observed_dims, self.final_t, max_diffusion)
 
         self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion_forward)
         self.backward_sde = prior_sdes.SDE(self.drift_backward, self.diffusion_backward)
@@ -165,9 +164,9 @@ class Model(pl.LightningModule):
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
-        # q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
-        # s_is = torch.tile(q_prob.sample().unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
-        s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
+        q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1])
+        s_is = torch.tile(q_prob.sample().unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
+        # s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
 
         time_values = self.time_values.to(ys.device).to(ys.dtype)
         xs = self.solve(s_is, sde, time_values, parallel_time_steps=True)
@@ -180,8 +179,8 @@ class Model(pl.LightningModule):
         likelihood = likelihood_dist.log_prob(ys[1:].unsqueeze(0)).mean(0)
 
         # Variational KL
-        # prior_dist = self.p(ys[:-1], self.sigma)
-        # variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
+        prior_dist = self.p(ys[:-1], self.sigma)
+        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
 
         # Variational KSD
         s_is = s_is.permute(1, 2, 0, 3)
@@ -195,20 +194,23 @@ class Model(pl.LightningModule):
         diff_values = sde.g(time_values[:-1], s_is)[:, 0, 0, 0]
 
         # ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
-        ksd_scaled = torch.einsum("a...,a...->a...", (delta_ts * diff_values ** 2)**2 / (2 * self.sigma**2), ksd)
+        ksd_scaled = torch.einsum("a...,a...->a...", (delta_ts * diff_values ** 2)**2 / (self.sigma**2), ksd)
+        # ksd_scaled = 1 / self.sigma**2 * ksd
+        # ksd_scaled = torch.einsum("a...,a...->a...", delta_ts**2 / self.sigma**2, ksd)
+        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values ** 4 / self.sigma**2, ksd)
         # ksd_scaled = torch.einsum("a...,a...->a...", diff_values ** 2, ksd)
         # ksd_scaled = torch.einsum("a...,a...->a...", diff_values, ksd)
         # ksd_scaled = torch.einsum("a,a...->a...", delta_ts**0.5 * diff_values, ksd)
         # ksd_scaled = ksd
 
-        # obj = (likelihood - variational_kl - ksd_scaled)
-        # metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
-        #            "ksd_scaled": ksd_scaled.mean(),
-        #            "obj": obj.mean()}
-        obj = (likelihood - ksd_scaled)
-        metrics = {"likelihood": likelihood.mean(),  "ksd": ksd.mean(),
+        obj = (likelihood - variational_kl - ksd_scaled)
+        metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
                    "ksd_scaled": ksd_scaled.mean(),
                    "obj": obj.mean()}
+        # obj = (likelihood - ksd_scaled)
+        # metrics = {"likelihood": likelihood.mean(),  "ksd": ksd.mean(),
+        #            "ksd_scaled": ksd_scaled.mean(),
+        #            "obj": obj.mean()}
         return -obj.mean(), metrics
 
     def loss_dsb(self, ys: Tensor, sde, other_sde):
@@ -324,12 +326,12 @@ class Model(pl.LightningModule):
         optim_backward = torch.optim.AdamW([
             {"params": self.diffusion_backward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
-            {"params": self.q_backwards.parameters(), "lr": 1e-3},
+            {"params": self.q_backwards.parameters(), "lr": FLAGS.learning_rate_var},
         ])
         optim_forward = torch.optim.AdamW([
             {"params": self.diffusion_forward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
-            {"params": self.q_forwards.parameters(), "lr": 1e-3},
+            {"params": self.q_forwards.parameters(), "lr": FLAGS.learning_rate_var},
         ])
         return optim_backward, optim_forward
 
