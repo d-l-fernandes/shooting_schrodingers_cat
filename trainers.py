@@ -104,19 +104,20 @@ class ModelTrainer:
                 check_val_every_n_epoch=FLAGS.eval_frequency,
                 # logger=[tb_logger, csv_logger],
                 logger=csv_logger,
-                log_every_n_steps=2
+                log_every_n_steps=2,
                 # stochastic_weight_avg=True,
             )
         # Data
         self.prior: BaseDataGenerator = datasets_dict[FLAGS.prior]()
         self.data: BaseDataGenerator = datasets_dict[FLAGS.dataset](self.prior)
+        self.data.setup()
 
         # Model
         if FLAGS.predict or FLAGS.restore:
             self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"epoch={FLAGS.restore_epoch}.ckpt")
         else:
             self.model = Model(self.data.observed_dims, not(FLAGS.restore or FLAGS.predict), True,
-                               self.results_folder)
+                               self.results_folder, self.data.max_diffusion)
 
         print(f"DIR: {parent_folder}")
 

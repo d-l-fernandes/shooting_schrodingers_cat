@@ -76,13 +76,41 @@ class BaseDataGenerator(LightningDataModule):
         # torch.manual_seed(42)
         # np.random.seed(42)
 
+        # To calculate max diffusion
+        self.dataset_min = 0.
+        self.dataset_max = 0.
+        self.max_diffusion = 0.
+
+    def calculate_max_diffusion(self):
+        if self.prior_dataset is None:
+            raise RuntimeError("Needs prior to be able to calculate max diffusion")
+
+        self.dataset_max = torch.max((self.xs_train**2).sum(-1)**0.5).numpy()
+        self.dataset_min = torch.min((self.xs_train**2).sum(-1)**0.5).numpy()
+        self.prior_dataset.dataset_max = torch.max((self.prior_dataset.xs_train**2).sum(-1)**0.5).numpy()
+        self.prior_dataset.dataset_min = torch.min((self.prior_dataset.xs_train**2).sum(-1)**0.5).numpy()
+
+        # self.max_diffusion = max(np.abs(self.dataset_max - self.prior_dataset.dataset_max),
+        #                          abs(self.dataset_max - self.prior_dataset.dataset_min)) / 2
+        self.max_diffusion = \
+            float((torch.std(self.xs_train, unbiased=True) +
+                   (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()))
+
+        # self.max_diffusion = float(max(
+        #     torch.std(self.xs_train, unbiased=True).numpy(),
+        #     (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()
+        # ))
+        # self.max_diffusion = torch.std(self.xs_train, unbiased=True)
+
     def setup(self, stage: Optional[str] = None) -> None:
-        if self.prior_dataset is not None:
-            self.prior_dataset.setup(stage)
         # Train arrays
         self.xs_train: Tensor = torch.ones((self.n_train, self.observed_dims))
         # Test arrays
         self.xs_test: Tensor = torch.ones((self.n_test, self.observed_dims))
+
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
 
     def train_dataloader(self):
         if self.prior_dataset is not None:
@@ -194,8 +222,11 @@ class BaseDataGenerator(LightningDataModule):
             ax_z_0.scatter(x_prior[:, 0], x_prior[:, 1], c="k", marker='o', alpha=0.2)
             ax_z_0.scatter(z_0[:, 0], z_0[:, 1], c="darkorange", marker='o', alpha=0.2)
 
-            for i in range(0, z_values_forward.shape[0], 4):
-                points = np.array([z_values_forward[i, :, 0], z_values_forward[i, :, 1]]).T.reshape(-1, 1, 2)
+            n_paths = 500
+            indices = np.random.choice(z_values_backward.shape[0], n_paths, replace=False)
+            for i in range(0, n_paths):
+                index = indices[i]
+                points = np.array([z_values_forward[index, :, 0], z_values_forward[index, :, 1]]).T.reshape(-1, 1, 2)
                 segments = np.concatenate([points[:-1], points[1:]], axis=1)
                 lc = LineCollection(segments, cmap='gnuplot', norm=norm, zorder=2)
                 lc.set_array(t_values)
@@ -203,8 +234,9 @@ class BaseDataGenerator(LightningDataModule):
                 lc.set_alpha(0.2)
                 line = ax_z_forwards.add_collection(lc)
                 del lc
-            for i in range(0, z_values_backward.shape[0], 4):
-                points = np.array([z_values_backward[i, :, 0], z_values_backward[i, :, 1]]).T.reshape(-1, 1, 2)
+            for i in range(0, n_paths):
+                index = indices[i]
+                points = np.array([z_values_backward[index, :, 0], z_values_backward[index, :, 1]]).T.reshape(-1, 1, 2)
                 segments = np.concatenate([points[:-1], points[1:]], axis=1)
                 lc = LineCollection(segments, cmap='gnuplot', norm=norm, zorder=2)
                 lc.set_array(t_values)
@@ -233,8 +265,8 @@ class Gaussian(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         # self.observed_dims: int = FLAGS.dims
         self.observed_dims: int = 2
 
@@ -252,6 +284,10 @@ class Gaussian(BaseDataGenerator):
             loc=torch.tensor([0.] * self.observed_dims),
             scale_tril=torch.eye(self.observed_dims)).sample((self.n_test,))
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         if self.observed_dims == 2:
@@ -262,33 +298,37 @@ class Blobs2D(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
+        self.x_lims = [[-6, 6], [-6, 6]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([3., 3.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_train // 3,))
-        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-5., -5.]),
+        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-3., -3.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_train // 3,))
-        blob_3 = distributions.MultivariateNormal(loc=torch.tensor([-5., 5.]),
+        blob_3 = distributions.MultivariateNormal(loc=torch.tensor([-3., 3.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_train // 3,))
         self.xs_train = torch.cat((blob_1, blob_2, blob_3))
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([5., 5.]),
+        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([3., 3.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_test // 3,))
-        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-5., -5.]),
+        blob_2 = distributions.MultivariateNormal(loc=torch.tensor([-3., -3.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_test // 3,))
-        blob_3 = distributions.MultivariateNormal(loc=torch.tensor([-5., 5.]),
+        blob_3 = distributions.MultivariateNormal(loc=torch.tensor([-3., 3.]),
                                                   scale_tril=torch.eye(2)).sample((self.n_test // 3,))
         self.xs_test = torch.cat((blob_1, blob_2, blob_3))
+
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
@@ -299,8 +339,8 @@ class Blobs3D(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 3
 
         self.x_lims = [[-10, 10], [-10, 10], [-10, 10]]
@@ -326,6 +366,10 @@ class Blobs3D(BaseDataGenerator):
         blob_3 = distributions.MultivariateNormal(loc=torch.tensor([-5., 5., -5]),
                                                   scale_tril=torch.eye(3)).sample((self.n_test // 3,))
         self.xs_test = torch.cat((blob_1, blob_2, blob_3))
+
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
@@ -390,8 +434,8 @@ class DoubleWellLeft(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-1.5, 1.5], [-1.5, 1.5]]
@@ -410,6 +454,10 @@ class DoubleWellLeft(BaseDataGenerator):
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_test,))
         self.xs_test = blob_1
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -419,8 +467,8 @@ class DoubleWellBiModalLeft(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-1.5, 1.5], [-1.5, 1.5]]
@@ -443,6 +491,10 @@ class DoubleWellBiModalLeft(BaseDataGenerator):
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_test // 2,))
         self.xs_test = torch.cat((blob_1, blob_2))
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -452,8 +504,8 @@ class DoubleWellRight(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-1.5, 1.5], [-1.5, 1.5]]
@@ -472,6 +524,10 @@ class DoubleWellRight(BaseDataGenerator):
                                                   scale_tril=torch.eye(2) * 0.1).sample((self.n_test,))
         self.xs_test = blob_1
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -481,8 +537,8 @@ class SpiralOne(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -500,6 +556,10 @@ class SpiralOne(BaseDataGenerator):
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([0., 0.]),
                                                   scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
         self.xs_test = blob_1
+
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
@@ -510,8 +570,8 @@ class SpiralTwo(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -530,6 +590,10 @@ class SpiralTwo(BaseDataGenerator):
                                                   scale_tril=torch.eye(2) * 0.5).sample((self.n_test,))
         self.xs_test = blob_1
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -539,8 +603,8 @@ class SCurve(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -564,6 +628,10 @@ class SCurve(BaseDataGenerator):
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -573,8 +641,8 @@ class Swiss(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -598,6 +666,10 @@ class Swiss(BaseDataGenerator):
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -607,8 +679,8 @@ class Moon(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -632,6 +704,10 @@ class Moon(BaseDataGenerator):
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -641,8 +717,8 @@ class Circle(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 3000
-        self.n_test: int = 3000
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-7.5, 7.5], [-7.5, 7.5]]
@@ -664,6 +740,10 @@ class Circle(BaseDataGenerator):
         self.xs_test = torch.tensor(x) * self.scaling_factor
         self.xs_test = self.xs_test.float()
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -673,8 +753,8 @@ class Checker(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
         super().__init__(prior_dataset)
         # Data properties
-        self.n_train: int = 4500
-        self.n_test: int = 4500
+        self.n_train: int = 6000
+        self.n_test: int = 6000
         self.observed_dims: int = 2
 
         self.x_lims = [[-10, 10], [-10, 10]]
@@ -706,6 +786,10 @@ class Checker(BaseDataGenerator):
         x = np.concatenate([x1[:, None], x2[:, None]], 1) * self.scaling_factor
         self.xs_test = torch.from_numpy(x).float()
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
         return self.plot_2d_to_2d(output, model, metrics)
@@ -734,6 +818,10 @@ class GaussianBoundLeft(BaseDataGenerator):
         blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-2.] * self.observed_dims),
                                                   scale_tril=0.3 * torch.eye(self.observed_dims)).sample((self.n_test,))
         self.xs_test = blob_1
+
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:
@@ -805,6 +893,10 @@ class GaussianBoundRight(GaussianBoundLeft):
                                                   scale_tril=0.5*torch.eye(self.observed_dims)).sample((self.n_test,))
         self.xs_test = blob_1
 
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
+
 
 class MNIST(BaseDataGenerator):
     def __init__(self, prior_dataset: BaseDataGenerator = None):
@@ -841,6 +933,10 @@ class MNIST(BaseDataGenerator):
         # self.test_labels = torch.tensor(images_test.targets)[indices]
         images_test = self.transform(images_test.data.float())[indices]
         self.xs_test = images_test.reshape(-1, self.observed_dims)
+
+        if self.prior_dataset is not None:
+            self.prior_dataset.setup(stage)
+            self.calculate_max_diffusion()
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
             -> Tuple[List[Figure], List[str]]:

@@ -10,7 +10,7 @@ from absl import flags
 from matplotlib.figure import Figure
 import geomloss
 
-from sde import drifts, diffusions, prior_sdes, variational, priors
+from sde import drifts, diffusions, prior_sdes, variational, priors, sinkhorn
 from weak_solver.sdeint import integrate, integrate_parallel_time_steps
 from stein import kernel
 
@@ -86,7 +86,8 @@ class Model(pl.LightningModule):
                                torch.tensor([]),
                                torch.tensor([]),
                                )
-        self.wasserstein_loss = geomloss.SamplesLoss()
+        # self.wasserstein_loss = geomloss.SamplesLoss()
+        self.wasserstein_loss = sinkhorn.SinkhornDistance(eps=0.05, max_iter=100)
         self.save_hyperparameters()
 
         # Time
@@ -276,14 +277,14 @@ class Model(pl.LightningModule):
     def validation_epoch_end(self, outputs: List[Output]):
         final_output: Output = reduce(lambda x, y: x + y, outputs)
 
-        if final_output.z_values_forward.shape[-1] > 5:
-            prior_wasserstein = 0
-            data_wasserstein = 0
-            total_wasserstein = 0
-        else:
-            prior_wasserstein = self.wasserstein_loss(final_output.x_prior, final_output.z_values_backward[:, -1])
-            data_wasserstein = self.wasserstein_loss(final_output.x_data, final_output.z_values_forward[:, -1])
-            total_wasserstein = prior_wasserstein + data_wasserstein
+        # if final_output.z_values_forward.shape[-1] > 5:
+        #     prior_wasserstein = 0
+        #     data_wasserstein = 0
+        #     total_wasserstein = 0
+        # else:
+        prior_wasserstein = self.wasserstein_loss(final_output.x_prior, final_output.z_values_backward[:, -1])
+        data_wasserstein = self.wasserstein_loss(final_output.x_data, final_output.z_values_forward[:, -1])
+        total_wasserstein = prior_wasserstein + data_wasserstein
 
         metrics = Metrics(torch.tensor([prior_wasserstein]),
                           torch.tensor([data_wasserstein]),
