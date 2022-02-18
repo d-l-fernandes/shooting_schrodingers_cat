@@ -95,10 +95,7 @@ class Model(pl.LightningModule):
         self.final_t = FLAGS.final_time
         self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
                                           device=self.device)
-        self.delta_t = self.final_t / FLAGS.num_steps
-
-        self.sigma = FLAGS.sigma
-        # self.sigma = self.delta_t**0.5
+        self.time_values_eval = torch.linspace(0, self.final_t, FLAGS.num_steps_val, device=self.device)
 
         # SDE
         self.drift_forward: drifts.BaseDrift = \
@@ -227,11 +224,11 @@ class Model(pl.LightningModule):
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         if self.trainer.sanity_checking:
-            z_backward = self.solve(x_data, self.prior_sde, self.time_values)
-            z_forward = self.solve(x_prior, self.prior_sde, self.time_values)
+            z_backward = self.solve(x_data, self.prior_sde, self.time_values_eval, method=FLAGS.solver_val)
+            z_forward = self.solve(x_prior, self.prior_sde, self.time_values_eval, method=FLAGS.solver_val)
         else:
-            z_backward = self.solve(x_data, self.backward_sde, self.time_values)
-            z_forward = self.solve(x_prior, self.forward_sde, self.time_values)
+            z_backward = self.solve(x_data, self.backward_sde, self.time_values_eval, method=FLAGS.solver_val)
+            z_forward = self.solve(x_prior, self.forward_sde, self.time_values_eval, method=FLAGS.solver_val)
 
         output = Output(
             z_backward.permute(1, 0, 2),
@@ -314,11 +311,13 @@ class Model(pl.LightningModule):
         checkpoint["metrics"] = self.metrics
         checkpoint["first"] = self.first
         checkpoint["forward"] = self.forward
+        checkpoint["ipfp_iteration"] = self.ipfp_iteration
 
     def on_load_checkpoint(self, checkpoint):
         self.metrics = checkpoint["metrics"]
         self.first = checkpoint["first"]
         self.forward = checkpoint["forward"]
+        self.ipfp_iteration = checkpoint["ipfp_iteration"]
 
         self.get_drift_diffusion(self.first, self.forward)
 
