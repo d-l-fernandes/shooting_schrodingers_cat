@@ -85,17 +85,22 @@ class BaseDataGenerator(LightningDataModule):
         if self.prior_dataset is None:
             raise RuntimeError("Needs prior to be able to calculate max diffusion")
 
-        self.dataset_max = torch.max((self.xs_train**2).sum(-1)**0.5).numpy()
-        self.dataset_min = torch.min((self.xs_train**2).sum(-1)**0.5).numpy()
-        self.prior_dataset.dataset_max = torch.max((self.prior_dataset.xs_train**2).sum(-1)**0.5).numpy()
-        self.prior_dataset.dataset_min = torch.min((self.prior_dataset.xs_train**2).sum(-1)**0.5).numpy()
+        self.dataset_max = torch.max((self.xs_train**2).sum(-1)**0.5)
+        self.dataset_min = torch.min((self.xs_train**2).sum(-1)**0.5)
+        self.prior_dataset.dataset_max = torch.max((self.prior_dataset.xs_train**2).sum(-1)**0.5)
+        self.prior_dataset.dataset_min = torch.min((self.prior_dataset.xs_train**2).sum(-1)**0.5)
 
         # self.max_diffusion = max(np.abs(self.dataset_max - self.prior_dataset.dataset_max),
         #                          abs(self.dataset_max - self.prior_dataset.dataset_min)) / 2
-        self.max_diffusion = \
-            float((torch.std(self.xs_train, unbiased=True) +
-                   (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()))
+        # self.max_diffusion = \
+        #     float((torch.std(self.xs_train, unbiased=True) +
+        #            (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()))
 
+        std = torch.std(self.xs_train, dim=0, unbiased=True)
+        mean_diff = torch.abs(self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))
+        # self.max_diffusion = torch.maximum(std, mean_diff)
+        self.max_diffusion = std + mean_diff
+        self.max_diffusion = 0. * self.max_diffusion + torch.max(self.max_diffusion)
         # self.max_diffusion = float(max(
         #     torch.std(self.xs_train, unbiased=True).numpy(),
         #     (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()
