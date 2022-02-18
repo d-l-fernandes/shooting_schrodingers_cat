@@ -1,10 +1,8 @@
-from typing import Tuple
 import torch
 from absl import flags
 from torch import distributions
 from torch.autograd.functional import jacobian
 from sklearn import datasets
-import numpy as np
 
 Tensor = torch.Tensor
 
@@ -92,8 +90,8 @@ class Hill(BasePriorSDE):
             raise RuntimeError("Hill only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        # return torch.zeros_like(x, device=x.device)
-        return self.grad_u(x[..., 0], x[..., 1])
+        return torch.zeros_like(x, device=x.device)
+        # return self.grad_u(x[..., 0], x[..., 1])
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
         z = (5 / 2.0) * (x ** 2 - 1 ** 2) ** 2 + y ** 2 + self.fac \
