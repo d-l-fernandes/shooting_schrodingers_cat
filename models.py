@@ -8,7 +8,6 @@ import torch
 import torch.autograd.functional as autograd
 from absl import flags
 from matplotlib.figure import Figure
-import geomloss
 
 from sde import drifts, diffusions, prior_sdes, variational, priors, sinkhorn
 from weak_solver.sdeint import integrate, integrate_parallel_time_steps
@@ -16,16 +15,18 @@ from stein import kernel
 
 
 flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
+flags.DEFINE_integer("num_steps_val", 100, "Number of time steps at validation", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
-flags.DEFINE_integer("num_samples", 10, "Number of one-step_samples", lower_bound=1)
+flags.DEFINE_integer("num_samples", 5, "Number of one-step_samples", lower_bound=1)
 
 flags.DEFINE_float("final_time", 1., "Final time.")
 flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("learning_rate_var", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
+flags.DEFINE_enum("solver_val", "rossler", ["em", "srk", "rossler"], "Solver to use in validation")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 
@@ -87,7 +88,6 @@ class Model(pl.LightningModule):
                                torch.tensor([]),
                                torch.tensor([]),
                                )
-        # self.wasserstein_loss = geomloss.SamplesLoss()
         self.wasserstein_loss = sinkhorn.SinkhornDistance(eps=0.05, max_iter=100)
         self.save_hyperparameters()
 
@@ -148,14 +148,14 @@ class Model(pl.LightningModule):
             self.data_type = "data"
 
     @staticmethod
-    def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False) -> Tensor:
+    def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
         if FLAGS.do_dsb:
             xs = integrate(sde, x_0, time_values, method="em")
         else:
             if parallel_time_steps:
-                xs = integrate_parallel_time_steps(sde, x_0, time_values, method=FLAGS.solver)
+                xs = integrate_parallel_time_steps(sde, x_0, time_values, method=method)
             else:
-                xs = integrate(sde, x_0, time_values, method=FLAGS.solver)
+                xs = integrate(sde, x_0, time_values, method=method)
         return xs
 
     def loss(self, ys: Tensor, sde):
@@ -208,7 +208,7 @@ class Model(pl.LightningModule):
         # metrics = {"likelihood": likelihood.mean(),  "ksd": ksd.mean(),
         #            "ksd_scaled": ksd_scaled.mean(),
         #            "obj": obj.mean()}
-        return -obj.mean(), metrics
+        return -obj.sum(0).mean(), metrics
 
     def loss_dsb(self, ys: Tensor, sde, other_sde):
         ys = torch.flip(ys, [0])
@@ -218,6 +218,8 @@ class Model(pl.LightningModule):
         drifts_term = \
             sde.f(time_values[:-1], ys[:-1]) - other_sde.f(time_values[:-1], ys[:-1]) + \
             other_sde.f(time_values[1:], ys[1:])
+
+        # TODO replace delta_t with difference of t_values
         obj = (obj + self.delta_t * drifts_term) ** 2
         metrics = {"obj": obj.mean()}
         return obj.mean(), metrics
@@ -244,7 +246,11 @@ class Model(pl.LightningModule):
         x = batch[self.data_type]
 
         with torch.no_grad():
-            xs = self.solve(x, self.solve_sde, self.time_values)
+            delta_ts = torch.rand(FLAGS.num_steps, device=x.device)
+            delta_ts = delta_ts / delta_ts.sum() * self.final_t
+            self.time_values = torch.cat((torch.tensor([0.], device=x.device), torch.cumsum(delta_ts, 0)))
+            xs = self.solve(x, self.solve_sde, self.time_values, method=FLAGS.solver)
+            self.time_values = torch.abs(torch.flip(self.final_t - self.time_values, [0]))
 
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad(set_to_none=True)
@@ -276,11 +282,6 @@ class Model(pl.LightningModule):
     def validation_epoch_end(self, outputs: List[Output]):
         final_output: Output = reduce(lambda x, y: x + y, outputs)
 
-        # if final_output.z_values_forward.shape[-1] > 5:
-        #     prior_wasserstein = 0
-        #     data_wasserstein = 0
-        #     total_wasserstein = 0
-        # else:
         prior_wasserstein = self.wasserstein_loss(final_output.x_prior, final_output.z_values_backward[:, -1])
         data_wasserstein = self.wasserstein_loss(final_output.x_data, final_output.z_values_forward[:, -1])
         total_wasserstein = prior_wasserstein + data_wasserstein
