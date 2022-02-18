@@ -15,11 +15,10 @@ FLAGS = flags.FLAGS
 
 
 class BaseVariational(torch.nn.Module):
-    def __init__(self, input_size: int, output_size: int, sigma: float):
+    def __init__(self, input_size: int, output_size: int):
         super().__init__()
         self.input_size = input_size
         self.output_size = output_size
-        self.sigma = sigma
 
     @staticmethod
     def init_weights(m):
@@ -29,33 +28,33 @@ class BaseVariational(torch.nn.Module):
 
 
 class Gaussian(BaseVariational):
-    def __init__(self, input_size: int, output_size: int, sigma: float):
-        super().__init__(input_size, output_size, sigma)
+    def __init__(self, input_size: int, output_size: int):
+        super().__init__(input_size, output_size)
         intermediate_size = 20 * input_size
         self.mean_nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
             torch.nn.Linear(intermediate_size, self.output_size),
         )
         self.std_nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(self.input_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
             torch.nn.Linear(intermediate_size, self.output_size),
         )
 
-    def forward(self, x: Tensor) -> distributions.Distribution:
+    def forward(self, x: Tensor, scale) -> distributions.Distribution:
         mean = self.mean_nn(x)
-        # out = torch.ones_like(x, device=x.device) * self.sigma
+        # out = torch.ones_like(x, device=x.device) * scale
         # out = functional.softplus(self.std_nn(x)) + 1e-5
-        out = torch.sigmoid(self.std_nn(x)) + 1e-8
+        out = torch.sigmoid(self.std_nn(x)) + 1e-6
         return distributions.Independent(distributions.Normal(loc=mean, scale=out), 1)
 
 
 class GaussianMNIST(BaseVariational):
-    def __init__(self, input_size: int, output_size: int, sigma: float):
-        super().__init__(input_size, output_size, sigma)
+    def __init__(self, input_size: int, output_size: int):
+        super().__init__(input_size, output_size)
         intermediate_size = 200
         self.mean_nn = torch.nn.Sequential(
             torch.nn.Linear(self.input_size, intermediate_size), torch.nn.LeakyReLU(),
