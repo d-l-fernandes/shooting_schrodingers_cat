@@ -18,29 +18,38 @@ class Scalar(torch.nn.Module):
         self.final_t = final_t
 
         if FLAGS.total_gamma > 0:
-            g_max = FLAGS.total_gamma
+            g_max = torch.ones(self.output_size) * FLAGS.total_gamma
         else:
             g_max = max_diffusion
 
+        self.total_diffusion = g_max
+
         if FLAGS.initial_gamma > 0:
-            a = FLAGS.initial_gamma
-            b = 4 / self.final_t * (g_max / self.final_t - a)
+            self.a = torch.ones(self.output_size) * FLAGS.initial_gamma
+            self.b = 4 / self.final_t * (g_max / self.final_t - self. a)
         else:
-            a = g_max
-            b = 0.
+            self.a = g_max / self.final_t
+            self.b = torch.zeros(self.output_size)
 
         # self.gamma_t = \
         #     lambda t: (self.g_min + 2 * g_diff * t / self.final_t) * (t < self.final_t / 2) + \
         #               ((2 * self.g_max - self.g_min) - 2 * g_diff * t / self.final_t) * (t >= self.final_t / 2)
-        self.gamma_t = \
-            lambda t: (a + b * t) * (t < self.final_t / 2) + \
-                      (a + b * self.final_t - b * t) * (t >= self.final_t / 2)
+        # self.gamma_t = \
+        #     lambda t: (a + b * t) * (t < self.final_t / 2) + \
+        #               (a + b * self.final_t - b * t) * (t >= self.final_t / 2)
+
+    def gamma_t(self, t):
+        b = self.b.to(t.device)
+        a = self.a.to(t.device)
+        if len(t.shape) != 0:
+            t = t.unsqueeze(-1)
+        return (a + b * t) * (t < self.final_t / 2) + (a + b * self.final_t - b * t) * (t >= self.final_t / 2)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         gamma = self.gamma_t(t)
         # return torch.ones_like(x, device=x.device) * gamma
         # return gamma
-        if len(gamma.shape) == 0:
-            return torch.ones_like(x, device=x.device) * gamma
+        if len(gamma.shape) == 1:
+            return torch.ones_like(x, device=x.device) * gamma.to(x.device)
         else:
-            return torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), gamma)
+            return torch.einsum("a...b,ab->a...b", torch.ones_like(x, device=x.device), gamma.to(x.device))
