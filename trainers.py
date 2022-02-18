@@ -32,7 +32,7 @@ class ModelTrainer:
 
         if not(FLAGS.restore or FLAGS.predict):
             date = now.strftime("%Y-%m-%d")
-            time = now.strftime("%H:%M")
+            time = now.strftime("%H:%M:%S")
             parent_folder += f"{date}/{time}/"
         else:
             date = FLAGS.restore_date if FLAGS.restore_date != "" else sorted(os.listdir(parent_folder))[-1]
