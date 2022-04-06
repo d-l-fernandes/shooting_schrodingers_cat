@@ -47,7 +47,7 @@ class Brownian(BasePriorSDE):
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        sigma = torch.einsum("a...,a->a...", diffusions, torch.sqrt(delta_ts))
+        sigma = torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), diffusions * torch.sqrt(delta_ts))
         return distributions.Independent(distributions.Normal(x, sigma), 1)
 
 
@@ -90,8 +90,8 @@ class Hill(BasePriorSDE):
             raise RuntimeError("Hill only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        return torch.zeros_like(x, device=x.device)
-        # return self.grad_u(x[..., 0], x[..., 1])
+        # return torch.zeros_like(x, device=x.device)
+        return self.grad_u(x[..., 0], x[..., 1])
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
         z = (5 / 2.0) * (x ** 2 - 1 ** 2) ** 2 + y ** 2 + self.fac \
@@ -107,7 +107,7 @@ class Hill(BasePriorSDE):
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x[..., 0], x[..., 1]))
-        sigma = torch.einsum("a...,a->a...", diffusions, torch.sqrt(delta_ts))
+        sigma = torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), diffusions * torch.sqrt(delta_ts))
         return distributions.Independent(distributions.Normal(x + drifts, sigma), 1)
 
 
