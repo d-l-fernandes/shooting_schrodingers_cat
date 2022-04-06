@@ -303,6 +303,10 @@ class Model(pl.LightningModule):
                 self.first = False
 
             if (self.current_epoch + 1) % (FLAGS.num_iter * 2) == 0:
+                if self.ipfp_iteration < FLAGS.schedule_iter:
+                    lr_scheduler_backward, lr_scheduler_forward = self.lr_schedulers()
+                    lr_scheduler_backward.step()
+                    lr_scheduler_forward.step()
                 self.ipfp_iteration += 1
             self.get_drift_diffusion(self.first, self.forward)
             torch.cuda.empty_cache()
@@ -367,7 +371,9 @@ class Model(pl.LightningModule):
             {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.q_forwards.parameters(), "lr": FLAGS.learning_rate_var},
         ])
-        return optim_backward, optim_forward
+        scheduler_backward = torch.optim.lr_scheduler.ExponentialLR(optim_backward, FLAGS.schedule_scale)
+        scheduler_forward = torch.optim.lr_scheduler.ExponentialLR(optim_forward, FLAGS.schedule_scale)
+        return [optim_backward, optim_forward], [scheduler_backward, scheduler_forward]
 
     def make_plot_figs(self, output: Output,
                        step: Union[int, str]) -> None:
