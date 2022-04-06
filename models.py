@@ -19,19 +19,21 @@ flags.DEFINE_integer("num_steps_val", 100, "Number of time steps at validation",
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
-flags.DEFINE_integer("num_samples", 5, "Number of one-step_samples", lower_bound=1)
+flags.DEFINE_integer("num_samples", 5, "Number of one-step samples", lower_bound=1)
 
 flags.DEFINE_float("final_time", 1., "Final time.")
 flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("learning_rate_var", 1e-3, "Learning rate of the optimizer.")
+flags.DEFINE_float("schedule_scale", 0.1**0.2, "Learning rate scheduler scale.")
+flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
 flags.DEFINE_enum("solver_val", "rossler", ["em", "srk", "rossler"], "Solver to use in validation")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 
-flags.DEFINE_float("initial_sigma", 0.1, "STD to use in Gaussian (fixed or initial value).")
-flags.DEFINE_float("min_sigma", 0.001, "STD to use in Gaussian (fixed or initial value).")
+flags.DEFINE_float("initial_sigma", 1., "STD to use in Gaussian (fixed or initial value).")
+flags.DEFINE_float("min_sigma", 0.001, "Min STD to use in Gaussian (fixed or initial value).")
 
 FLAGS = flags.FLAGS
 
@@ -84,6 +86,7 @@ class Model(pl.LightningModule):
         self.results_folder = results_folder
         self.max_diffusion = max_diffusion
         self.automatic_optimization = False
+        self.observed_dims = observed_dims
         self.metrics = Metrics(torch.tensor([]),
                                torch.tensor([]),
                                torch.tensor([]),
@@ -104,19 +107,16 @@ class Model(pl.LightningModule):
         # SDE
         self.drift_forward: drifts.BaseDrift = \
             drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
-        self.diffusion_forward = diffusions.Scalar(observed_dims, observed_dims, self.final_t, max_diffusion)
         self.drift_backward: drifts.BaseDrift = \
             drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
-        self.diffusion_backward = diffusions.Scalar(observed_dims, observed_dims, self.final_t, max_diffusion)
+        self.diffusion = diffusions.Scalar(observed_dims, observed_dims, self.final_t, max_diffusion)
 
-        self.max_diffusion = self.diffusion_backward.total_diffusion
-
-        self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion_forward)
-        self.backward_sde = prior_sdes.SDE(self.drift_backward, self.diffusion_backward)
+        self.backward_sde = prior_sdes.SDE(self.drift_backward, self.diffusion)
+        self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion)
 
         # Prior
         self.prior_sde: prior_sdes.BasePriorSDE = prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
-        self.prior_sde.g = lambda t, x: self.diffusion_forward(x, t)
+        self.prior_sde.g = lambda t, x: self.diffusion(x, t)
 
         # Variational q
         self.q_backwards: variational.BaseVariational \
