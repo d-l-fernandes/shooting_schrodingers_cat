@@ -7,20 +7,20 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
 	python -W ignore main.py \
 	  --drift=score_network \
 	  --diffusion=scalar \
-    --dataset=toy_experiment_blobs_2d \
-    --prior=gaussian \
-    --prior_sde=whirlpool \
-	  --prior_dist=gaussian \
+    --dataset=double_well_right \
+    --prior=double_well_left \
+    --prior_sde=hill \
+	  --prior_dist=gaussian\
 	  --batch_size=1500 \
-	  --num_epochs=40 \
+	  --num_epochs=50 \
 	  --eval_frequency=20 \
-	  --learning_rate=5e-5 \
-	  --num_steps=10 \
+	  --learning_rate=1e-4 \
+	  --num_steps=15 \
 	  --num_iter=10 \
 	  --batch_repeats=50 \
+	  --num_samples=5 \
 	  --sigma=0.001 \
+	  --max_gamma=0.3 \
 	  --solver=rossler \
-    --gpus="$number_gpus" #\
-    # -p \
-    # --restore_date=2021-11-16\
-    # --restore_time=19:05
+	  --hill_scale=0 \
+    --gpus="$number_gpus"
