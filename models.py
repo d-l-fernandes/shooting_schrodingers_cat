@@ -123,13 +123,16 @@ class Model(pl.LightningModule):
             = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
         self.q_forwards: variational.BaseVariational \
             = variational.variational_dict[FLAGS.variational](observed_dims, observed_dims)
-        self.likelihood: priors.BasePrior \
+        self.likelihood_backwards: priors.BasePrior \
+            = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
+        self.likelihood_forwards: priors.BasePrior \
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
         self.p: priors.BasePrior \
             = priors.priors_dict["gaussian"](observed_dims, observed_dims)
 
         self.solve_sde = None
         self.optim_sde = None
+        self.optim_likelihood = None
         self.optim_q = None
         self.data_type = None
 
@@ -145,16 +148,19 @@ class Model(pl.LightningModule):
             self.solve_sde = self.prior_sde
             self.optim_sde = self.backward_sde
             self.optim_q = self.q_backwards
+            self.optim_likelihood = self.likelihood_backwards
             self.data_type = "prior"
         elif self.forward:
             self.solve_sde = self.forward_sde
             self.optim_sde = self.backward_sde
             self.optim_q = self.q_backwards
+            self.optim_likelihood = self.likelihood_backwards
             self.data_type = "prior"
         else:
             self.solve_sde = self.backward_sde
             self.optim_sde = self.forward_sde
             self.optim_q = self.q_forwards
+            self.optim_likelihood = self.likelihood_forwards
             self.data_type = "data"
 
         self.sigma = max(FLAGS.initial_sigma / 2**self.ipfp_iteration, FLAGS.min_sigma)
@@ -185,8 +191,11 @@ class Model(pl.LightningModule):
         xs = xs.permute(1, 0, 2, 3)
 
         # Likelihood
-        likelihood_dist = self.likelihood(xs, sigma)
-        likelihood = likelihood_dist.log_prob(ys[1:].unsqueeze(0)).mean(0)
+        # likelihood_dist = self.likelihood(xs, self.sigma)
+        # likelihood_dist = self.optim_likelihood(ys[1:], time_values[1:])
+        # likelihood_dist = self.optim_likelihood(ys[1:], self.sigma)
+        likelihood_dist = self.optim_likelihood(xs, torch.sqrt(delta_ts) * diff_values)
+        likelihood = likelihood_dist.log_prob(xs).mean(0)
 
         # Variational KL
         prior_dist = self.p(ys[:-1], sigma)
@@ -361,15 +370,15 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.AdamW([
-            {"params": self.diffusion_backward.parameters(), "lr": FLAGS.learning_rate},
+        optim_backward = torch.optim.Adam([
             {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.q_backwards.parameters(), "lr": FLAGS.learning_rate_var},
+            {"params": self.likelihood_backwards.parameters(), "lr": FLAGS.learning_rate}
         ])
-        optim_forward = torch.optim.AdamW([
-            {"params": self.diffusion_forward.parameters(), "lr": FLAGS.learning_rate},
+        optim_forward = torch.optim.Adam([
             {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.q_forwards.parameters(), "lr": FLAGS.learning_rate_var},
+            {"params": self.likelihood_forwards.parameters(), "lr": FLAGS.learning_rate}
         ])
         scheduler_backward = torch.optim.lr_scheduler.ExponentialLR(optim_backward, FLAGS.schedule_scale)
         scheduler_forward = torch.optim.lr_scheduler.ExponentialLR(optim_forward, FLAGS.schedule_scale)
