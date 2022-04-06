@@ -16,7 +16,7 @@ flags.DEFINE_bool("restore", False, "Whether to restore previous params from che
 flags.DEFINE_bool("predict", False, "Whether to only do predictions.", short_name="p")
 flags.DEFINE_string("restore_date", "", "Which date folder to restore checkpoint from. If empty, will get newest")
 flags.DEFINE_string("restore_time", "", "Which time folder to restore checkpoint from. If empty, will get newest")
-flags.DEFINE_integer("restore_epoch", 1, "Which epoch to restore.")
+flags.DEFINE_integer("restore_epoch", -1, "Which epoch to restore.")
 
 flags.DEFINE_integer("gpus", 1, "Number of GPUs to use",
                      lower_bound=0)
@@ -29,6 +29,7 @@ class ModelTrainer:
     def __init__(self):
         # Folders
         parent_folder = "results/"
+        epoch = None
 
         now = datetime.datetime.now()
 
@@ -37,14 +38,15 @@ class ModelTrainer:
             time = now.strftime("%H:%M:%S")
             parent_folder += f"{date}/{time}/"
         else:
-            date = FLAGS.restore_date if FLAGS.restore_date != "" else sorted(os.listdir(parent_folder))[-1]
-            parent_folder += f"{date}/"
+            date = parent_folder + FLAGS.restore_date \
+                if FLAGS.restore_date != "" else sorted(Path(parent_folder).iterdir(), key=os.path.getmtime)[-1]
+            parent_folder = f"{date}/"
             if not os.path.exists(parent_folder):
                 raise RuntimeError(f"{parent_folder} does not exist")
 
-            time = FLAGS.restore_time if FLAGS.restore_time != "" else sorted(os.listdir(parent_folder))[-1]
-            parent_folder += f"{time}/"
-
+            time = parent_folder + FLAGS.restore_time \
+                if FLAGS.restore_time != "" else sorted(Path(parent_folder).iterdir(), key=os.path.getmtime)[-1]
+            parent_folder = f"{time}/"
             if not os.path.exists(parent_folder):
                 raise RuntimeError(f"{parent_folder} does not exist")
 
@@ -65,6 +67,11 @@ class ModelTrainer:
             if not os.path.exists(d):
                 os.makedirs(d)
 
+        if FLAGS.restore or FLAGS.predict:
+            epoch = f"epoch={FLAGS.restore_epoch}" \
+                if FLAGS.restore_epoch != -1 \
+                else (sorted(Path(self.checkpoint_folder).iterdir(), key=os.path.getmtime)[-1]).parts[-1]
+
         # Save flags
         FLAGS.append_flags_into_file(parent_folder + "flags.txt")
 
@@ -80,7 +87,7 @@ class ModelTrainer:
         csv_logger = pl_loggers.CSVLogger(self.summary_folder, version=0)
 
         if FLAGS.restore or FLAGS.predict:
-            resume_from_checkpoint = self.checkpoint_folder + f"epoch={FLAGS.restore_epoch}.ckpt"
+            resume_from_checkpoint = self.checkpoint_folder + f"{epoch}"
         else:
             resume_from_checkpoint = None
 
@@ -116,7 +123,7 @@ class ModelTrainer:
 
         # Model
         if FLAGS.predict or FLAGS.restore:
-            self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"epoch={FLAGS.restore_epoch}.ckpt")
+            self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"{epoch}")
         else:
             self.model = Model(self.data.observed_dims, not(FLAGS.restore or FLAGS.predict), True,
                                self.results_folder, self.data.max_diffusion)
