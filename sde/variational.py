@@ -47,9 +47,13 @@ class Gaussian(BaseVariational):
     def forward(self, x: Tensor, scale) -> distributions.Distribution:
         mean = self.mean_nn(x)
         # out = torch.ones_like(x, device=x.device) * scale
-        # out = functional.softplus(self.std_nn(x)) + 1e-5
-        out = torch.sigmoid(self.std_nn(x)) + 1e-6
+        out = functional.softplus(self.std_nn(x)) + 1e-8
+        # out = torch.sigmoid(self.std_nn(x)) + 1e-6
         return distributions.Independent(distributions.Normal(loc=mean, scale=out), 1)
+
+    def std(self, x: Tensor, scale):
+        return ((x - self.mean_nn(x))**2).mean(-1)
+        # return functional.softplus(self.std_nn(x)) + 1e-5
 
 
 class GaussianMNIST(BaseVariational):
