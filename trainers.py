@@ -1,4 +1,6 @@
 import os
+os.environ['MPLCONFIGDIR'] = os.getcwd() + "/configs/"
+from pathlib import Path
 
 from absl import flags
 from pytorch_lightning.callbacks import ModelCheckpoint
