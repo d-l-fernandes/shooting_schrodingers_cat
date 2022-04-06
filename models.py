@@ -139,9 +139,24 @@ class Model(pl.LightningModule):
         # Sigma exponent
         self.ipfp_iteration = 0
         self.sigma = FLAGS.initial_sigma
+        self.alpha = 1.
 
         self.get_drift_diffusion(self.first, self.forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
+
+    def alpha_t(self, t):
+        return (- 4 * t**2 / self.final_t**2 + 4 * t / self.final_t) * 0.5
+        # return (2 / self.final_t) * t * (t < self.final_t / 2) \
+        #        + (- 2 / self.final_t * t + 2) * (t >= self.final_t / 2)
+        # return (4 / self.final_t) * t * (t < self.final_t / 4) \
+        #        + 1 * (t >= self.final_t / 4) * (t < 3 * self.final_t / 4) \
+        #        + (-4 / self.final_t * t + 4) * (t >= 3 * self.final_t / 4)
+        # return (10 / self.final_t) * t * (t < self.final_t / 10) \
+        #        + 1 * (t >= self.final_t / 10) * (t < 9 * self.final_t / 10) \
+        #        + (-10 / self.final_t * t + 10) * (t >= 9 * self.final_t / 10)
+        # return 0.5 * ((100 / self.final_t) * t * (t < self.final_t / 100) \
+        #        + 1 * (t >= self.final_t / 100) * (t < 99 * self.final_t / 100) \
+        #        + (-100 / self.final_t * t + 100) * (t >= 99 * self.final_t / 100))
 
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
@@ -164,6 +179,9 @@ class Model(pl.LightningModule):
             self.data_type = "data"
 
         self.sigma = max(FLAGS.initial_sigma / 2**self.ipfp_iteration, FLAGS.min_sigma)
+        # self.alpha = 1. / (self.ipfp_iteration + 1)
+        # self.alpha = 0.9**self.ipfp_iteration
+        self.alpha = 0.5 * 0.9**self.ipfp_iteration
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
@@ -178,17 +196,19 @@ class Model(pl.LightningModule):
 
     def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
-        sigma = torch.tensor(self.sigma, device=ys.device)
 
-        q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1], sigma)
-        s_is = torch.tile(q_prob.sample().unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
-        # s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
+        q_prob: torch.distributions.Distribution = self.optim_q(ys[:-1], self.sigma)
+        # s_is = torch.tile(q_prob.sample().unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
+        s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
 
         time_values = self.time_values.to(ys.device).to(ys.dtype)
         xs = self.solve(s_is, sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
 
         s_is = s_is.permute(1, 0, 2, 3)
         xs = xs.permute(1, 0, 2, 3)
+
+        delta_ts = time_values[1:] - time_values[:-1]
+        diff_values = sde.g(time_values[:-1], s_is)
 
         # Likelihood
         # likelihood_dist = self.likelihood(xs, self.sigma)
@@ -198,8 +218,8 @@ class Model(pl.LightningModule):
         likelihood = likelihood_dist.log_prob(xs).mean(0)
 
         # Variational KL
-        prior_dist = self.p(ys[:-1], sigma)
-        variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
+        # prior_dist = self.p(ys[:-1], self.sigma)
+        # variational_kl = torch.distributions.kl.kl_divergence(q_prob, prior_dist)
 
         # Variational KSD
         s_is = s_is.permute(1, 2, 0, 3)
@@ -209,47 +229,151 @@ class Model(pl.LightningModule):
         grad_transition = autograd.jacobian(lambda x: transition_density.log_prob(x).sum(), xs, create_graph=True)
 
         ksd = kernel.stein_discrepancy(xs, grad_transition)
-        delta_ts = time_values[1:] - time_values[:-1]
-        diff_values = sde.g(time_values[:-1], s_is)[:, 0, 0].mean(-1)
-        max_diff = torch.sqrt(torch.square(self.max_diffusion).sum())
 
-        # ksd_scaled = ksd * self.delta_t**solver_scale[FLAGS.solver]
-        # ksd_scaled = torch.einsum(
-        #     "a...,a...->a...",
-        #     self.final_t**0.5 * max_diff * (delta_ts * diff_values ** 2)**2 / (2 * sigma**2),
-        #     ksd)
         ksd_scaled = torch.einsum(
-            "a...,a...->a...",
-            (delta_ts * diff_values ** 2)**2 / (2 * sigma**2),
+            "a,a...->a...",
+            (delta_ts * diff_values ** 2)**2 / (2 * self.sigma**2),
             ksd)
-        # ksd_scaled = torch.einsum("a...,a...->a...", delta_ts * diff_values ** 2 / (2 * self.sigma**2), ksd)
-        # ksd_scaled = torch.einsum("a...,a...->a...", delta_ts**0.5 * diff_values / (self.sigma**2), ksd)  # TOO STRONG
-        # ksd_scaled = torch.einsum("a...,a...->a...", delta_ts * self.max_diffusion ** 2 / (self.sigma**2), ksd)
-        # ksd_scaled = torch.einsum("a...,a...->a...", self.final_t**0.5 * diff_values / self.sigma, ksd)
-        # ksd_scaled = 1 / self.sigma**2 * ksd
-        # ksd_scaled = self.max_diffusion / self.sigma**2 * ksd
-        # ksd_scaled = torch.einsum("a...,a...->a...", delta_ts**2 / self.sigma**2, ksd)  # TOO WEAK
-        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values ** 4 / self.sigma**2, ksd)
-        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values ** 4, ksd)
-        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values ** 2, ksd)
-        # ksd_scaled = torch.einsum("a...,a...->a...", diff_values, ksd)
-        # ksd_scaled = torch.einsum("a,a...->a...", delta_ts**0.5 * diff_values, ksd)
-        # ksd_scaled = torch.einsum("a,a...->a...", delta_ts * diff_values**2, ksd)
-        # ksd_scaled = torch.einsum("a,a...->a...", (delta_ts**0.5 * diff_values)**4, ksd)
-        # ksd_scaled = ksd  # TOO WEAK
 
-        # ksd_on = int(not (self.forward and not bool(self.ipfp_iteration)))
-        # ksd_scaled = ksd_on * ksd_scaled
+        # obj = (likelihood - variational_kl - ksd_scaled)
+        # metrics = {"likelihood": likelihood.sum(0).mean(),
+        #            "variational_kl": variational_kl.sum(0).mean(),
+        #            "ksd": ksd.sum(0).mean(),
+        #            "ksd_scaled": ksd_scaled.sum(0).mean(),
+        #            "obj": obj.sum(0).mean()}
 
-        obj = (likelihood - variational_kl - ksd_scaled)
-        metrics = {"likelihood": likelihood.mean(), "variational_kl": variational_kl.mean(), "ksd": ksd.mean(),
-                   "ksd_scaled": ksd_scaled.mean(),
-                   "obj": obj.mean()}
+        likelihood = likelihood / torch.abs(likelihood).detach()
+        ksd_scaled = ksd_scaled / torch.abs(ksd_scaled).detach()
+        # ksd_scaled = ksd_scaled / (torch.abs(ksd_scaled) * torch.abs(likelihood)).detach()
         # obj = (likelihood - ksd_scaled)
-        # metrics = {"likelihood": likelihood.mean(),  "ksd": ksd.mean(),
-        #            "ksd_scaled": ksd_scaled.mean(),
-        #            "obj": obj.mean()}
+        obj = ((1. - self.alpha) * likelihood - self.alpha * ksd_scaled)
+        metrics = {"likelihood": likelihood.sum(0).mean(),  "ksd": ksd.sum(0).mean(),
+                   "ksd_scaled": ksd_scaled.sum(0).mean(),
+                   "obj": obj.mean()}
         return -obj.sum(0).mean(), metrics
+
+    def loss_new(self, ys: Tensor, sde):
+        ys = torch.flip(ys, [0])
+
+        s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
+
+        time_values = self.time_values.to(ys.device).to(ys.dtype)
+        xs = self.solve(s_is, sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
+        # ys_prior = self.solve(ys[:-1], self.prior_sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
+
+        s_is = s_is.permute(0, 2, 1, 3)
+        xs = xs.permute(1, 0, 2, 3)
+
+        # Likelihood
+        p_ys = self.optim_likelihood(ys[1:], self.sigma)
+        # p_ys_prior = self.optim_likelihood(ys_prior, self.sigma)
+        p_ys_prior = self.prior_sde.transition_density(
+            time_values, s_is, self.forward)
+
+        # Variational KSD
+        grad_p_ys = autograd.jacobian(lambda x: p_ys.log_prob(x).sum(), xs, create_graph=True)
+        xs = xs.permute(1, 2, 0, 3)
+        grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
+        ksd = kernel.stein_discrepancy(xs, grad_p_ys).mean(-1)
+
+        grad_p_ys_prior = autograd.jacobian(lambda x: p_ys_prior.log_prob(x).sum(), xs, create_graph=True)
+
+        ksd_prior = kernel.stein_discrepancy(xs, grad_p_ys_prior).mean(-1)
+
+        ksd = ksd / ksd.detach()
+        ksd_prior = ksd_prior / ksd_prior.detach()
+
+        alphas = self.alpha_t(time_values[1:])
+        obj = ((1. - alphas) * ksd + alphas * ksd_prior).sum(0)
+        metrics = {"ksd": ksd.sum(),
+                   "ksd_prior": ksd_prior.sum(),
+                   "obj": obj}
+        return obj, metrics
+
+    def loss_shooting_no_prior(self, ys: Tensor, sde):
+        ys = torch.flip(ys, [0])
+
+        q_prob: torch.distributions.Distribution = self.optim_q(ys[1:-1], self.sigma)
+        s_is = torch.cat((ys[0].unsqueeze(0), q_prob.rsample()), dim=0)
+        s_is = torch.tile(s_is.unsqueeze(1), (1, FLAGS.num_samples+1, 1, 1))
+
+        time_values = self.time_values.to(ys.device).to(ys.dtype)
+
+        s_is = self.solve(s_is, sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
+
+        xs = s_is[:, -1]
+        s_is = s_is[:-1, :-1]
+
+        # Likelihood
+        likelihood_dist = self.likelihood(xs, self.sigma)
+        likelihood = likelihood_dist.log_prob(ys[1:])
+
+        # Variational KSD
+        s_is = s_is.permute(1, 0, 2, 3)
+        grad_prob = autograd.jacobian(lambda x: q_prob.log_prob(x).sum(), s_is, create_graph=True)
+        s_is = s_is.permute(1, 2, 0, 3)
+        grad_prob = grad_prob.permute(1, 2, 0, 3)
+
+        ksd = kernel.stein_discrepancy(s_is, grad_prob)
+
+        # scale = torch.mean(torch.abs(torch.prod(self.optim_q.std(s_is, self.sigma).detach(), -1)), -1)
+        scale = torch.mean(self.optim_q.std(s_is, self.sigma), -1).detach()
+        ksd = scale * ksd # / (2 * self.sigma**2)
+
+        obj = (likelihood.sum(0) - ksd.sum(0))
+        metrics = {"likelihood": likelihood.sum(0).mean(),
+                   "ksd": ksd.sum(0).mean(),
+                   "obj": obj.mean()}
+        return -obj.sum(0).mean(), metrics
+
+    def loss_shooting(self, ys: Tensor, sde):
+        ys = torch.flip(ys, [0])
+
+        q_prob: torch.distributions.Distribution = self.optim_q(ys[1:-1], self.sigma)
+        s_is = torch.cat((ys[0].unsqueeze(0), q_prob.rsample()), dim=0)
+        s_is = torch.tile(s_is.unsqueeze(1), (1, FLAGS.num_samples, 1, 1))  # [T, S, N, D]
+
+        time_values = self.time_values.to(ys.device).to(ys.dtype)
+
+        x_is = self.solve(s_is, sde, time_values, parallel_time_steps=True, method=FLAGS.solver)  # [T, S, N, D]
+
+        x_is = x_is.permute(1, 0, 2, 3)  # [S, T, N, D]
+
+        # Likelihood
+        # likelihood_dist = self.likelihood(x_is, self.sigma)
+        likelihood_dist = self.optim_likelihood(x_is, self.sigma)
+        likelihood = likelihood_dist.log_prob(ys[1:].unsqueeze(0)).mean(0)
+
+        # Variational KL
+        transition_density_kl = self.prior_sde.transition_density(
+            time_values[:-1], s_is[:-1, 0], self.forward)
+        kl = torch.distributions.kl.kl_divergence(q_prob, transition_density_kl)
+
+        # Variational KSD
+        s_is = s_is.permute(0, 2, 1, 3)  # [T, N, S, D]
+        x_is = x_is.permute(1, 2, 0, 3)  # [T, N, S, D]
+        transition_density_ksd = self.prior_sde.transition_density(
+            time_values, s_is, self.forward)
+        grad_transition = autograd.jacobian(lambda x: transition_density_ksd.log_prob(x).sum(), x_is, create_graph=True)
+
+        ksd = kernel.stein_discrepancy(x_is, grad_transition)
+        delta_ts = time_values[1:] - time_values[:-1]
+        diff_values = sde.g(time_values[:-1], s_is)
+
+        # KSD Scaled
+        ksd_scaled = torch.einsum(
+            "a,a...->a...",
+            (delta_ts * diff_values ** 2)**2 / (2 * self.sigma**2),
+            ksd)
+
+        # Objective
+        obj = (likelihood.sum(0) - ksd_scaled.sum(0) - kl.sum(0))
+        metrics = {"likelihood": likelihood.sum(0).mean(),
+                   "ksd": ksd.sum(0).mean(),
+                   "ksd_scaled": ksd_scaled.sum(0).mean(),
+                   "kl": kl.sum(0).mean(),
+                   "obj": obj.mean()}
+        return -obj.mean(), metrics
 
     def loss_dsb(self, ys: Tensor, sde, other_sde):
         ys = torch.flip(ys, [0])
@@ -289,7 +413,7 @@ class Model(pl.LightningModule):
         with torch.no_grad():
             delta_ts = torch.rand(FLAGS.num_steps, device=x.device)
             delta_ts = delta_ts / delta_ts.sum() * self.final_t
-            self.time_values = torch.cat((torch.tensor([0.], device=x.device), torch.cumsum(delta_ts, 0)))
+            self.time_values = torch.cat((torch.tensor([0.], device=x.device), torch.cumsum(delta_ts, 0))).detach()
             xs = self.solve(x, self.solve_sde, self.time_values, method=FLAGS.solver)
             self.time_values = torch.abs(torch.flip(self.final_t - self.time_values, [0]))
 
@@ -298,7 +422,10 @@ class Model(pl.LightningModule):
             if FLAGS.do_dsb:
                 loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
             else:
-                loss, metrics = self.loss(xs, self.optim_sde)
+                # loss, metrics = self.loss(xs, self.optim_sde)
+                loss, metrics = self.loss_new(xs, self.optim_sde)
+                # loss, metrics = self.loss_shooting_no_prior(xs, self.optim_sde)
+                # loss, metrics = self.loss_shooting(xs, self.optim_sde)
             self.manual_backward(loss)
             # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
