@@ -49,8 +49,15 @@ flags.DEFINE_integer("batch_size", 10, "Batch Size.")
 # flags.DEFINE_integer("dims", 2, "Number of dims.")
 flags.DEFINE_enum("prior", "gaussian", datasets_list, "Prior to use.")
 flags.DEFINE_enum("dataset", "toy_experiment_blobs_2d", datasets_list, "Dataset to use.")
+flags.DEFINE_bool("normalize", True, "Whether to normalize data")
 
 FLAGS = flags.FLAGS
+
+
+def normalize(data):
+    mean = torch.mean(data, dim=0, keepdim=True)
+    std = torch.std(data, dim=0, keepdim=True)
+    return (data - mean) / std
 
 
 class BaseDataGenerator(LightningDataModule):
@@ -66,7 +73,7 @@ class BaseDataGenerator(LightningDataModule):
 
         # Plotting properties
         self.draw_y_axis: bool = False
-        self.x_lims: Optional[List[List[float]]] = None
+        self.x_lims = [[-3, 3], [-3, 3]]
 
         # Train arrays
         self.xs_train: Tensor = torch.ones((self.n_train, self.observed_dims))
@@ -90,21 +97,15 @@ class BaseDataGenerator(LightningDataModule):
         self.prior_dataset.dataset_max = torch.max((self.prior_dataset.xs_train**2).sum(-1)**0.5)
         self.prior_dataset.dataset_min = torch.min((self.prior_dataset.xs_train**2).sum(-1)**0.5)
 
-        # self.max_diffusion = max(np.abs(self.dataset_max - self.prior_dataset.dataset_max),
-        #                          abs(self.dataset_max - self.prior_dataset.dataset_min)) / 2
+        self.max_diffusion = float(max(torch.abs(self.dataset_max - self.prior_dataset.dataset_max).numpy(),
+                                       torch.abs(self.dataset_max - self.prior_dataset.dataset_min).numpy()))
         # self.max_diffusion = \
         #     float((torch.std(self.xs_train, unbiased=True) +
         #            (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()))
-
-        std = torch.std(self.xs_train, dim=0, unbiased=True)
-        mean_diff = torch.abs(self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))
-        # self.max_diffusion = torch.maximum(std, mean_diff)
-        self.max_diffusion = std + mean_diff
-        self.max_diffusion = 0. * self.max_diffusion + torch.max(self.max_diffusion)
-        # self.max_diffusion = float(max(
-        #     torch.std(self.xs_train, unbiased=True).numpy(),
-        #     (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2).sum()**0.5).numpy()
-        # ))
+        # self.max_diffusion = torch.max(
+        #     torch.std(self.xs_train, dim=0, unbiased=True),
+        #     (((self.xs_train.mean(0) - self.prior_dataset.xs_train.mean(0))**2)**0.5)
+        # ).numpy()
         # self.max_diffusion = torch.std(self.xs_train, unbiased=True)
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -119,21 +120,31 @@ class BaseDataGenerator(LightningDataModule):
 
     def train_dataloader(self):
         if self.prior_dataset is not None:
+            if FLAGS.normalize:
+                self.prior_dataset.xs_train = normalize(self.prior_dataset.xs_train)
+                self.xs_train = normalize(self.xs_train)
             loaders = {
                 "prior": DataLoader(
                     self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=0),
                 "data": DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
+            if FLAGS.normalize:
+                self.xs_train = normalize(self.xs_train)
             return DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0)
 
     def val_dataloader(self):
         if self.prior_dataset is not None:
+            if FLAGS.normalize:
+                self.prior_dataset.xs_test = normalize(self.prior_dataset.xs_test)
+                self.xs_test = normalize(self.xs_test)
             loaders = {
                 "prior": DataLoader(self.prior_dataset.xs_test, self.batch_size, num_workers=0, pin_memory=True),
                 "data": DataLoader(self.xs_test, self.batch_size, num_workers=0, pin_memory=True)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
+            if FLAGS.normalize:
+                self.xs_test = normalize(self.xs_test)
             return DataLoader(self.xs_test, self.batch_size, num_workers=0, pin_memory=True)
 
     def plot_results(self, output: Output, model: Model, metrics: Metrics) \
@@ -275,8 +286,6 @@ class Gaussian(BaseDataGenerator):
         # self.observed_dims: int = FLAGS.dims
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
-
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.setup(stage)
@@ -306,8 +315,6 @@ class Blobs2D(BaseDataGenerator):
         self.n_train: int = 6000
         self.n_test: int = 6000
         self.observed_dims: int = 2
-
-        self.x_lims = [[-6, 6], [-6, 6]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
@@ -579,8 +586,6 @@ class SpiralTwo(BaseDataGenerator):
         self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
-
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
             self.prior_dataset.observed_dims = self.observed_dims
@@ -612,7 +617,6 @@ class SCurve(BaseDataGenerator):
         self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
         self.scaling_factor = 4.
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -650,7 +654,6 @@ class Swiss(BaseDataGenerator):
         self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
         self.scaling_factor = 4.
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -660,13 +663,13 @@ class Swiss(BaseDataGenerator):
             self.prior_dataset.observed_dims = self.observed_dims
             self.prior_dataset.setup(stage)
         # Train
-        x, y = datasets.make_swiss_roll(self.n_train, noise=0.1)
+        x, y = datasets.make_swiss_roll(self.n_train, noise=0.2)
         self.xs_train = torch.tensor(x)[:, [0, 2]]
         self.xs_train = (self.xs_train - self.xs_train.mean()) / self.xs_train.std() * self.scaling_factor
         self.xs_train = self.xs_train.float()
 
         # Test
-        x, y = datasets.make_swiss_roll(self.n_test, noise=0.1)
+        x, y = datasets.make_swiss_roll(self.n_test, noise=0.2)
         self.xs_test = torch.tensor(x)[:, [0, 2]]
         self.xs_test = (self.xs_test - self.xs_test.mean()) / self.xs_test.std() * self.scaling_factor
         self.xs_test = self.xs_test.float()
@@ -688,7 +691,6 @@ class Moon(BaseDataGenerator):
         self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
         self.scaling_factor = 4.
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -726,7 +728,6 @@ class Circle(BaseDataGenerator):
         self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-7.5, 7.5], [-7.5, 7.5]]
         self.scaling_factor = 5.
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -762,7 +763,6 @@ class Checker(BaseDataGenerator):
         self.n_test: int = 6000
         self.observed_dims: int = 2
 
-        self.x_lims = [[-10, 10], [-10, 10]]
         self.scaling_factor = 4.
 
     def setup(self, stage: Optional[str] = None) -> None:
@@ -782,7 +782,6 @@ class Checker(BaseDataGenerator):
         x_min = np.min(x[:, 0])
         y_max = np.max(x[:, 1])
         y_min = np.min(x[:, 1])
-        self.x_lims = [[x_min-1, x_max+1], [y_min-1, y_max+1]]
 
         # Test
         x1 = np.random.rand(self.n_test) * 4 - 2
@@ -807,8 +806,6 @@ class GaussianBoundLeft(BaseDataGenerator):
         self.n_train: int = 5000
         self.n_test: int = 5000
         self.observed_dims: int = 2
-
-        self.x_lims = [[-10, 10], [-10, 10]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
@@ -881,8 +878,6 @@ class GaussianBoundRight(GaussianBoundLeft):
         self.n_train: int = 5000
         self.n_test: int = 5000
         self.observed_dims: int = 2
-
-        self.x_lims = [[-10, 10], [-10, 10]]
 
     def setup(self, stage: Optional[str] = None) -> None:
         if self.prior_dataset is not None:
