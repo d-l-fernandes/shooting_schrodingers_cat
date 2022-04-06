@@ -345,7 +345,9 @@ class Model(pl.LightningModule):
             log_metrics = {"wasserstein_prior": prior_wasserstein, "wasserstein_data": data_wasserstein,
                            "wasserstein_total": total_wasserstein}
             self.log("eval", log_metrics)
-            self.log("wasserstein_total", total_wasserstein)
+            self.log("data", data_wasserstein, prog_bar=True, logger=False)
+            self.log("prior", prior_wasserstein, prog_bar=True, logger=False)
+            self.log("total", total_wasserstein, prog_bar=True, logger=False)
         self.metrics += metrics
 
         if self.trainer.sanity_checking:
