@@ -83,10 +83,10 @@ class NNGeneral(BaseDrift):
         super().__init__(input_size, output_size)
         intermediate_size = 20 * output_size
         self.nn = torch.nn.Sequential(
-            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.LeakyReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
-            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.LeakyReLU(),
+            torch.nn.Linear(self.input_size + 1, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
+            torch.nn.Linear(intermediate_size, intermediate_size), torch.nn.SiLU(),
             torch.nn.Linear(intermediate_size, self.output_size)
         )
 
