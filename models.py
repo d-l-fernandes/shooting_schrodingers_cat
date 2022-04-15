@@ -5,7 +5,7 @@ from typing import NamedTuple, List, Union
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
-import torch.autograd.functional as autograd
+import functorch
 from absl import flags
 from matplotlib.figure import Figure
 
@@ -197,8 +197,11 @@ class Model(pl.LightningModule):
             time_values, s_is, self.forward)
 
         # Variational KSD
-        grad_p_ys = autograd.jacobian(lambda x: p_ys.log_prob(x).sum(), xs, create_graph=True)
+        grad_p_ys = functorch.grad(lambda x: p_ys.log_prob(x).sum())(xs)
+
         xs = xs.permute(1, 2, 0, 3)
+        grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
+
         grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
         ksd = kernel.stein_discrepancy(xs, grad_p_ys).mean(-1)
 
