@@ -127,3 +127,32 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.idea/.gitignore
+.idea/misc.xml
+.idea/modules.xml
+.idea/shooting_schrodingers_cat.iml
+.idea/vcs.xml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/inspectionProfiles/Project_Default.xml
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/t10k-images-idx3-ubyte
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/t10k-images-idx3-ubyte.gz
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/t10k-labels-idx1-ubyte
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/t10k-labels-idx1-ubyte.gz
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/train-images-idx3-ubyte
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/train-images-idx3-ubyte.gz
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/train-labels-idx1-ubyte
+pretrained/fashion_mnist_vae/data/FashionMNIST/raw/train-labels-idx1-ubyte.gz
+pretrained/mnist_vae/data/MNIST/raw/t10k-images-idx3-ubyte
+pretrained/mnist_vae/data/MNIST/raw/t10k-images-idx3-ubyte.gz
+pretrained/mnist_vae/data/MNIST/raw/t10k-labels-idx1-ubyte
+pretrained/mnist_vae/data/MNIST/raw/t10k-labels-idx1-ubyte.gz
+pretrained/mnist_vae/data/MNIST/raw/train-images-idx3-ubyte
+pretrained/mnist_vae/data/MNIST/raw/train-images-idx3-ubyte.gz
+pretrained/mnist_vae/data/MNIST/raw/train-labels-idx1-ubyte
+pretrained/mnist_vae/data/MNIST/raw/train-labels-idx1-ubyte.gz
+stein/test.py
+misc/bound_fit.py
+misc/test.py
+experiments/bounds/run_solver.sh
+experiments/brownian_prior/run_all.sh
+experiments/brownian_prior_dsb/run_all.sh
