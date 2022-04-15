@@ -1,5 +1,6 @@
 from typing import Union, Tuple
 import torch
+import numpy as np
 
 Tensor = torch.Tensor
 
@@ -7,7 +8,7 @@ Tensor = torch.Tensor
 def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]], 
     sigma) -> Tensor:
 
-    diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3) # * delta_t**0.5
+    diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3) 
     pairwise_dists = torch.sum(diffs**2, -1)
 
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
