@@ -116,7 +116,12 @@ class Model(pl.LightningModule):
         self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion)
 
         # Prior
-        self.prior_sde: prior_sdes.BasePriorSDE = prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
+        self.prior_sde: prior_sdes.BasePriorSDE = \
+            prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
+        self.initial_prior_sde: prior_sdes.BasePriorSDE = \
+            prior_sdes.prior_sdes_dict["brownian"](observed_dims)
+
+        self.initial_prior_sde.g = lambda t, x: self.diffusion(x, t)
         self.prior_sde.g = lambda t, x: self.diffusion(x, t)
 
         self.likelihood_backwards: priors.BasePrior \
@@ -148,7 +153,7 @@ class Model(pl.LightningModule):
 
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
-            self.solve_sde = self.prior_sde
+            self.solve_sde = self.initial_prior_sde
             self.optim_sde = self.backward_sde
             self.optim_likelihood = self.likelihood_backwards
             self.data_type = "prior"
