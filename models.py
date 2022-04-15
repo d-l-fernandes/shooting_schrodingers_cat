@@ -15,7 +15,6 @@ from stein import kernel
 
 
 flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
-flags.DEFINE_integer("num_steps_val", 100, "Number of time steps at validation", lower_bound=1)
 flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
@@ -30,6 +29,7 @@ flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use"
 flags.DEFINE_enum("solver_val", "rossler", ["em", "srk", "rossler"], "Solver to use in validation")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
+flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
 
 flags.DEFINE_float("initial_sigma", 1., "STD to use in Gaussian (fixed or initial value).")
 flags.DEFINE_float("min_sigma", 0.001, "Min STD to use in Gaussian (fixed or initial value).")
@@ -99,7 +99,7 @@ class Model(pl.LightningModule):
         self.final_t = FLAGS.final_time
         self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
                                           device=self.device)
-        self.time_values_eval = torch.linspace(0, self.final_t, FLAGS.num_steps_val, device=self.device)
+        self.time_values_eval = torch.linspace(0, self.final_t, FLAGS.num_steps, device=self.device)
 
         # SDE
         self.drift_forward: drifts.BaseDrift = \
@@ -119,8 +119,6 @@ class Model(pl.LightningModule):
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
         self.likelihood_forwards: priors.BasePrior \
             = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
-        self.p: priors.BasePrior \
-            = priors.priors_dict["gaussian"](observed_dims, observed_dims)
 
         self.solve_sde = None
         self.optim_sde = None
@@ -233,10 +231,39 @@ class Model(pl.LightningModule):
         metrics = {"obj": obj.mean()}
         return obj.mean(), metrics
 
+    def training_step(self, batch, batch_idx):
+        optim = self.optimizers()[self.optim_dict_conv[self.data_type]]
+        x = batch[self.data_type]
+
+        with torch.no_grad():
+            if FLAGS.uniform_delta_t:
+                xs = self.solve(x, self.solve_sde, self.time_values, method=FLAGS.solver)
+            else:
+                delta_ts = torch.rand(FLAGS.num_steps, device=x.device)
+                delta_ts = delta_ts / delta_ts.sum() * self.final_t
+                self.time_values = torch.cat((torch.tensor([0.], device=x.device), torch.cumsum(delta_ts, 0))).detach()
+                xs = self.solve(x, self.solve_sde, self.time_values, method=FLAGS.solver)
+                self.time_values = torch.abs(torch.flip(self.final_t - self.time_values, [0]))
+
+            time_values = self.time_values.to(xs.device).to(xs.dtype)
+            xs_prior = self.solve(torch.flip(xs[:-1], [0]), self.prior_sde, 
+                time_values, parallel_time_steps=True, method=FLAGS.solver)
+
+        for _ in range(FLAGS.batch_repeats):
+            optim.zero_grad()
+            if FLAGS.do_dsb:
+                loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
+            else:
+                loss, metrics = self.loss(xs, self.optim_sde)
+            self.manual_backward(loss)
+            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            optim.step()
+        self.log("training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False)
+
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         if self.trainer.sanity_checking:
-            z_backward = self.solve(x_data, self.prior_sde, self.time_values_eval, method=FLAGS.solver_val)
-            z_forward = self.solve(x_prior, self.prior_sde, self.time_values_eval, method=FLAGS.solver_val)
+            z_backward = self.solve(x_data, self.initial_prior_sde, self.time_values_eval, method=FLAGS.solver_val)
+            z_forward = self.solve(x_prior, self.initial_prior_sde, self.time_values_eval, method=FLAGS.solver_val)
         else:
             z_backward = self.solve(x_data, self.backward_sde, self.time_values_eval, method=FLAGS.solver_val)
             z_forward = self.solve(x_prior, self.forward_sde, self.time_values_eval, method=FLAGS.solver_val)
@@ -250,30 +277,8 @@ class Model(pl.LightningModule):
 
         return output
 
-    def training_step(self, batch, batch_idx):
-        optim = self.optimizers()[self.optim_dict_conv[self.data_type]]
-        x = batch[self.data_type]
-
-        with torch.no_grad():
-            delta_ts = torch.rand(FLAGS.num_steps, device=x.device)
-            delta_ts = delta_ts / delta_ts.sum() * self.final_t
-            self.time_values = torch.cat((torch.tensor([0.], device=x.device), torch.cumsum(delta_ts, 0))).detach()
-            xs = self.solve(x, self.solve_sde, self.time_values, method=FLAGS.solver)
-            self.time_values = torch.abs(torch.flip(self.final_t - self.time_values, [0]))
-
-        for _ in range(FLAGS.batch_repeats):
-            optim.zero_grad(set_to_none=True)
-            if FLAGS.do_dsb:
-                loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
-            else:
-                loss, metrics = self.loss(xs, self.optim_sde)
-            self.manual_backward(loss)
-            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
-            optim.step()
-        self.log("training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False)
-
     def on_train_epoch_end(self, unused=None):
-        if (self.current_epoch+1) % FLAGS.num_iter == 0:
+        if (self.current_epoch + 1) % FLAGS.num_iter == 0:
             self.forward = not self.forward
             if self.first:
                 self.first = False
@@ -339,11 +344,11 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.Adam([
+        optim_backward = torch.optim.AdamW([
             {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.likelihood_backwards.parameters(), "lr": FLAGS.learning_rate}
         ])
-        optim_forward = torch.optim.Adam([
+        optim_forward = torch.optim.AdamW([
             {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.likelihood_forwards.parameters(), "lr": FLAGS.learning_rate}
         ])
@@ -374,7 +379,7 @@ class Model(pl.LightningModule):
             name = step
 
         final = len(fig_names)
-        for i in range(final-1, -1, -1):
+        for i in range(final - 1, -1, -1):
             figs[i].savefig(f"{self.results_folder}{fig_names[i]}_{name}.png")
             figs[i].clf()
             plt.clf()
