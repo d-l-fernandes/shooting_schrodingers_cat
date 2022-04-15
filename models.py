@@ -19,14 +19,16 @@ flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 5, "Number of one-step samples", lower_bound=1)
+flags.DEFINE_integer("linear_alpha_cutoff", 10, "Inverse of fraction of time to have linear alpha", lower_bound=0)
 
 flags.DEFINE_float("final_time", 1., "Final time.")
 flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("schedule_scale", 0.1**0.2, "Learning rate scheduler scale.")
 flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
-flags.DEFINE_enum("solver", "rossler", ["em", "srk", "rossler"], "Solver to use")
-flags.DEFINE_enum("solver_val", "rossler", ["em", "srk", "rossler"], "Solver to use in validation")
+flags.DEFINE_float("alpha_scale", 0.5, "Max alpha(t) to use")
+
+flags.DEFINE_enum("alpha_function", "quadratic", ["quadratic", "linear"], "Type of alpha(t) to use")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
@@ -128,23 +130,19 @@ class Model(pl.LightningModule):
         # Sigma exponent
         self.ipfp_iteration = 0
         self.sigma = FLAGS.initial_sigma
+        self.scale = 0.
 
         self.get_drift_diffusion(self.first, self.forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
     def alpha_t(self, t):
-        return (- 4 * t**2 / self.final_t**2 + 4 * t / self.final_t) * 0.5
-        # return (2 / self.final_t) * t * (t < self.final_t / 2) \
-        #        + (- 2 / self.final_t * t + 2) * (t >= self.final_t / 2)
-        # return (4 / self.final_t) * t * (t < self.final_t / 4) \
-        #        + 1 * (t >= self.final_t / 4) * (t < 3 * self.final_t / 4) \
-        #        + (-4 / self.final_t * t + 4) * (t >= 3 * self.final_t / 4)
-        # return (10 / self.final_t) * t * (t < self.final_t / 10) \
-        #        + 1 * (t >= self.final_t / 10) * (t < 9 * self.final_t / 10) \
-        #        + (-10 / self.final_t * t + 10) * (t >= 9 * self.final_t / 10)
-        # return 0.5 * ((100 / self.final_t) * t * (t < self.final_t / 100) \
-        #        + 1 * (t >= self.final_t / 100) * (t < 99 * self.final_t / 100) \
-        #        + (-100 / self.final_t * t + 100) * (t >= 99 * self.final_t / 100))
+        if FLAGS.alpha_function == "quadratic":
+            return (- 4 * t**2 / self.final_t**2 + 4 * t / self.final_t) * self.scale
+        else:
+            cutoff = FLAGS.linear_alpha_cutoff
+            return self.scale * ((cutoff / self.final_t) * t * (t < self.final_t / cutoff) \
+                   + 1 * (t >= self.final_t / cutoff) * (t < (cutoff-1) * self.final_t / cutoff) \
+                   + (-cutoff / self.final_t * t + cutoff) * (t >= (cutoff-1) * self.final_t / cutoff))
 
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
@@ -164,6 +162,14 @@ class Model(pl.LightningModule):
             self.data_type = "data"
 
         self.sigma = max(FLAGS.initial_sigma / 2**self.ipfp_iteration, FLAGS.min_sigma)
+        # self.scale = FLAGS.alpha_scale / (1 + np.exp(-0.5 *(self.ipfp_iteration - 10)))
+        # self.scale = FLAGS.alpha_scale / (1 + np.exp(-(self.ipfp_iteration - 5)))
+        # self.scale = 1. / (1 + np.exp(-(self.ipfp_iteration - 10)))
+        # self.scale = min(0.1 * self.ipfp_iteration, FLAGS.alpha_scale)
+        # self.scale = min(0.05 * self.ipfp_iteration, FLAGS.alpha_scale)
+        # self.scale = FLAGS.alpha_scale
+        # self.scale = min(FLAGS.alpha_scale * self.ipfp_iteration, FLAGS.alpha_scale)
+        self.scale = min((1. - self.sigma)* self.ipfp_iteration, (1. - self.sigma))
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
