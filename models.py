@@ -28,6 +28,8 @@ flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_float("alpha_scale", 0.5, "Max alpha(t) to use")
 
+flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
+flags.DEFINE_enum("solver_val", "srk", ["em", "srk", "rossler"], "Solver to use in validation")
 flags.DEFINE_enum("alpha_function", "quadratic", ["quadratic", "linear"], "Type of alpha(t) to use")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
@@ -182,14 +184,13 @@ class Model(pl.LightningModule):
                 xs = integrate(sde, x_0, time_values, method=method)
         return xs
 
-    def loss(self, ys: Tensor, sde):
+    def loss(self, ys: Tensor, ys_prior: Tensor, sde):
         ys = torch.flip(ys, [0])
 
         s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
 
         time_values = self.time_values.to(ys.device).to(ys.dtype)
         xs = self.solve(s_is, sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
-        # ys_prior = self.solve(ys[:-1], self.prior_sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
 
         s_is = s_is.permute(0, 2, 1, 3)
         xs = xs.permute(1, 0, 2, 3)
@@ -260,7 +261,7 @@ class Model(pl.LightningModule):
             if FLAGS.do_dsb:
                 loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
             else:
-                loss, metrics = self.loss(xs, self.optim_sde)
+                loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
             self.manual_backward(loss)
             # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
