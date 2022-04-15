@@ -1,9 +1,11 @@
+from typing import Union, Tuple
 import torch
 
 Tensor = torch.Tensor
 
 
-def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma) -> Tensor:
+def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]], 
+    sigma) -> Tensor:
 
     diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3) # * delta_t**0.5
     pairwise_dists = torch.sum(diffs**2, -1)
@@ -11,10 +13,12 @@ def stein_discrepancy(theta: Tensor, p_grad: Tensor, sigma) -> Tensor:
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
     h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
     # h = pairwise_dists[..., indices[0], indices[1]].mean(dim=-1)
-    h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1).detach() # / np.log(theta.shape[-2] + 1)
+    h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1) / np.log(theta.shape[-2] + 1)
+    # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1).detach() / np.log(theta.shape[-2] + 1)
 
     # h = sigma * h
-    # h = h * 0. + 1.
+    # h = h * 0. + 0.01
+    h = h * 0.1
     kxy = torch.exp(-pairwise_dists / h**2 / 2)
 
     h = h.unsqueeze(-1)
