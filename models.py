@@ -203,30 +203,40 @@ class Model(pl.LightningModule):
         grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
         # grad_p_ys_prior = grad_p_ys_prior.permute(1, 2, 0, 3)
 
-        grad_p = self.scale * grad_p_ys_prior + (1. - self.scale) * grad_p_ys
-        grad_p[-1] = grad_p_ys[-1]
-        ksd = kernel.stein_discrepancy(xs, grad_p, self.sigma).mean(-1)
+        # grad_p = self.scale * grad_p_ys_prior + (1. - self.scale) * grad_p_ys
+        # grad_p[-1] = grad_p_ys[-1]
+        # ksd = kernel.stein_discrepancy(xs, grad_p, self.sigma).mean(-1)
 
-        metrics = {"ksd": ksd.sum()}
-        return ksd.sum(), metrics
+        # metrics = {"ksd": ksd.sum()}
+        # return ksd.sum(), metrics
 
-        # ksd, ksd_prior = \
-        #     kernel.stein_discrepancy(
-        #         xs, (grad_p_ys, grad_p_ys_prior), self.sigma)
+        ksd, ksd_prior = \
+            kernel.stein_discrepancy(
+                xs, (grad_p_ys, grad_p_ys_prior), self.sigma)
         
-        # ksd = ksd.mean(-1)
-        # ksd_prior = ksd_prior.mean(-1)
+        ksd = ksd.mean(-1)
+        ksd_prior = ksd_prior.mean(-1)
+
+        delta_ts = time_values[1:] - time_values[:-1]
+        diffusions = sde.g(time_values[:-1], s_is)
+
+        ksd_prior = torch.einsum(
+            "a,a...->a...",
+            (delta_ts**0.5 * diffusions)**4 / self.sigma**4,
+            ksd_prior
+            )
 
         # alphas = self.alpha_t(time_values[1:])
         # obj = ((1. - alphas) * ksd + alphas * ksd_prior).sum(0)
         # ksd_prior[-1] = ksd_prior[-1] * 0.
 
         # obj = (1 - self.scale) * ksd.sum() + self.scale * ksd_prior.sum()
+        obj = ksd.sum() + self.scale * ksd_prior.sum()
         # obj = (ksd + ksd_prior).sum()
-        # metrics = {"ksd": ksd.sum() * self.sigma**4,
-        #            "ksd_prior": ksd_prior.sum() * self.sigma**4,
-        #            "obj": obj * self.sigma**4}
-        # return obj, metrics
+        metrics = {"ksd": ksd.sum() * self.sigma**4,
+                   "ksd_prior": ksd_prior.sum() * self.sigma**4,
+                   "obj": obj * self.sigma**4}
+        return obj, metrics
 
     def loss_dsb(self, ys: Tensor, sde, other_sde):
         ys = torch.flip(ys, [0])
