@@ -20,7 +20,7 @@ flags.DEFINE_integer("restore_epoch", -1, "Which epoch to restore.")
 
 flags.DEFINE_integer("gpus", 1, "Number of GPUs to use",
                      lower_bound=0)
-flags.DEFINE_integer("eval_frequency", 10, "How often to evaluate the model.")
+flags.DEFINE_integer("eval_frequency", 50, "How often to evaluate the model.")
 
 FLAGS = flags.FLAGS
 

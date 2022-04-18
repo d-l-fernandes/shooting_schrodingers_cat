@@ -14,29 +14,25 @@ from weak_solver.sdeint import integrate, integrate_parallel_time_steps
 from stein import kernel
 
 
-flags.DEFINE_integer("num_steps", 10, "Number of time steps", lower_bound=1)
-flags.DEFINE_integer("num_iter", 50, "Number of IPFP iterations", lower_bound=1)
+flags.DEFINE_integer("num_steps", 20, "Number of time steps", lower_bound=1)
+flags.DEFINE_integer("num_iter", 25, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 5, "Number of one-step samples", lower_bound=1)
-flags.DEFINE_integer("linear_alpha_cutoff", 10, "Inverse of fraction of time to have linear alpha", lower_bound=0)
 
 flags.DEFINE_float("final_time", 1., "Final time.")
 flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("schedule_scale", 0.1**0.2, "Learning rate scheduler scale.")
 flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
-flags.DEFINE_float("alpha_scale", 0.5, "Max alpha(t) to use")
+flags.DEFINE_float("scale", 1., "Scale to use", lower_bound=0.)
+flags.DEFINE_float("sigma", 1e-3, "STD to use in Gaussian.")
 
 flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
 flags.DEFINE_enum("solver_val", "srk", ["em", "srk", "rossler"], "Solver to use in validation")
-flags.DEFINE_enum("alpha_function", "quadratic", ["quadratic", "linear"], "Type of alpha(t) to use")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
-
-flags.DEFINE_float("initial_sigma", 1., "STD to use in Gaussian (fixed or initial value).")
-flags.DEFINE_float("min_sigma", 0.001, "Min STD to use in Gaussian (fixed or initial value).")
 
 FLAGS = flags.FLAGS
 
@@ -136,7 +132,7 @@ class Model(pl.LightningModule):
 
         # Sigma exponent
         self.ipfp_iteration = 0
-        self.sigma = FLAGS.initial_sigma
+        self.sigma = FLAGS.sigma
         self.scale = 0.
 
         self.get_drift_diffusion(self.first, self.forward)
@@ -168,15 +164,7 @@ class Model(pl.LightningModule):
             self.optim_likelihood = self.likelihood_forwards
             self.data_type = "data"
 
-        self.sigma = max(FLAGS.initial_sigma / 2**self.ipfp_iteration, FLAGS.min_sigma)
-        # self.scale = FLAGS.alpha_scale / (1 + np.exp(-0.5 *(self.ipfp_iteration - 10)))
-        # self.scale = FLAGS.alpha_scale / (1 + np.exp(-(self.ipfp_iteration - 5)))
-        # self.scale = 1. / (1 + np.exp(-(self.ipfp_iteration - 10)))
-        # self.scale = min(0.1 * self.ipfp_iteration, FLAGS.alpha_scale)
-        # self.scale = min(0.05 * self.ipfp_iteration, FLAGS.alpha_scale)
-        # self.scale = FLAGS.alpha_scale
-        # self.scale = min(FLAGS.alpha_scale * self.ipfp_iteration, FLAGS.alpha_scale)
-        self.scale = min((1. - self.sigma)* self.ipfp_iteration, (1. - self.sigma))
+        self.scale = min(FLAGS.scale * self.ipfp_iteration, FLAGS.scale)
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
