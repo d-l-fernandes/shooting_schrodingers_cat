@@ -2,7 +2,19 @@ from typing import Union, Tuple
 import torch
 import numpy as np
 
+from absl import flags
+
+flags.DEFINE_bool("ksd_unbiased", True,
+                  "Whether to use unbiased ksd estimator.")
+flags.DEFINE_bool("ksd_detached", False,
+                  "Whether to use detach h in ksd estimator.")
+
+flags.DEFINE_enum("ksd_scale", "median", ["median", "mean"],
+                  "Which type of scale to use for ksd estimator.")
+
 Tensor = torch.Tensor
+
+FLAGS = flags.FLAGS
 
 
 def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]], 
@@ -12,14 +24,21 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
     pairwise_dists = torch.sum(diffs**2, -1)
 
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
-    h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
-    # h = pairwise_dists[..., indices[0], indices[1]].mean(dim=-1)
-    h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1) / np.log(theta.shape[-2] + 1)
-    # h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1).detach() / np.log(theta.shape[-2] + 1)
 
-    # h = sigma * h
-    # h = h * 0. + 0.01
-    h = h * 0.1
+    if FLAGS.ksd_scale == "median":
+        h = pairwise_dists[..., indices[0], indices[1]].median(dim=-1)[0]
+    elif FLAGS.ksd_scale == "mean":
+        h = pairwise_dists[..., indices[0], indices[1]].mean(dim=-1)
+    else:
+        raise RuntimeError("Invalid value for ksd_scale.")
+
+    if FLAGS.ksd_detached:
+        h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1).detach() \
+            / np.log(theta.shape[-2] + 1)
+    else:
+        h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1) \
+            / np.log(theta.shape[-2] + 1)
+
     kxy = torch.exp(-pairwise_dists / h**2 / 2)
 
     h = h.unsqueeze(-1)
@@ -33,10 +52,12 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
 
         u = first_term + second_term + third_term + trace_dx2d2kxy
 
-        return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
-        # u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
+        if FLAGS.ksd_unbiased:
+            u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
 
-        # return 1 / (theta.shape[-2] * (theta.shape[-2] - 1)) * torch.flatten(u, -2, -1).sum(-1)
+            return 1 / (theta.shape[-2] * (theta.shape[-2] - 1)) * torch.flatten(u, -2, -1).sum(-1)
+        else:
+            return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
     else:
         first_terms =  \
             (torch.einsum("...ab,...ac,...cb->...ac", i, kxy, i) 
@@ -50,7 +71,13 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
 
         us = (sum(i) for i in zip(first_terms, second_terms, third_terms))
 
-        return (torch.flatten(i, -2, -1).sum(-1) / theta.shape[-2]**2 
-                for i in us)
+        if FLAGS.ksd_unbiased:
+            us = (i - torch.diag_embed(torch.diagonal(i, dim1=-1, dim2=-2)) 
+                  for i in us)
+            scale = 1 / (theta.shape[-2] * (theta.shape[-2] - 1))
+        else:
+            scale = 1 / theta.shape[-2]**2
+
+        return (torch.flatten(i, -2, -1).sum(-1) * scale for i in us)
 
 
