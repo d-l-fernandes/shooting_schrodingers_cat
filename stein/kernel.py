@@ -55,7 +55,7 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
         if FLAGS.ksd_unbiased:
             u -= torch.diag_embed(torch.diagonal(u, dim1=-1, dim2=-2))
 
-            return 1 / (theta.shape[-2] * (theta.shape[-2] - 1)) * torch.flatten(u, -2, -1).sum(-1)
+            return 1 / (theta.shape[-2] * (theta.shape[-2] - 1)) * torch.abs(torch.flatten(u, -2, -1).sum(-1))
         else:
             return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
     else:
@@ -78,6 +78,6 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
         else:
             scale = 1 / theta.shape[-2]**2
 
-        return (torch.flatten(i, -2, -1).sum(-1) * scale for i in us)
+        return (torch.abs(torch.flatten(i, -2, -1).sum(-1)) * scale for i in us)
 
 
