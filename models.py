@@ -25,7 +25,10 @@ flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
 flags.DEFINE_float("schedule_scale", 0.1**0.2, "Learning rate scheduler scale.")
 flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
-flags.DEFINE_float("scale", 1., "Scale to use", lower_bound=0.)
+flags.DEFINE_float("scale", 1., "Regularization scale to use", lower_bound=0.)
+flags.DEFINE_float("scale_increment", 0.1, 
+                   "Regularization increment per IPFP iteration to use", 
+                   lower_bound=0.)
 flags.DEFINE_float("sigma", 1e-3, "STD to use in Gaussian.")
 
 flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
@@ -164,7 +167,8 @@ class Model(pl.LightningModule):
             self.optim_likelihood = self.likelihood_forwards
             self.data_type = "data"
 
-        self.scale = min(FLAGS.scale * self.ipfp_iteration, FLAGS.scale)
+        # self.scale = min(FLAGS.scale * self.ipfp_iteration, FLAGS.scale)
+        self.scale = min(FLAGS.scale_increment * self.ipfp_iteration, FLAGS.scale)
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
@@ -228,7 +232,7 @@ class Model(pl.LightningModule):
 
         # alphas = self.alpha_t(time_values[1:])
         # obj = ((1. - alphas) * ksd + alphas * ksd_prior).sum(0)
-        # ksd_prior[-1] = ksd_prior[-1] * 0.
+        ksd_prior[-1] = ksd_prior[-1] * 0.
 
         # obj = (1 - self.scale) * ksd.sum() + self.scale * ksd_prior.sum()
         obj = ksd.sum() + self.scale * ksd_prior.sum()
@@ -277,7 +281,7 @@ class Model(pl.LightningModule):
             else:
                 loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
             self.manual_backward(loss)
-            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
         self.log("training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False)
 
@@ -365,11 +369,11 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.AdamW([
+        optim_backward = torch.optim.Adam([
             {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.likelihood_backwards.parameters(), "lr": FLAGS.learning_rate}
         ])
-        optim_forward = torch.optim.AdamW([
+        optim_forward = torch.optim.Adam([
             {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.likelihood_forwards.parameters(), "lr": FLAGS.learning_rate}
         ])
