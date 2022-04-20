@@ -30,8 +30,8 @@ flags.DEFINE_float("schedule_scale", 0.1**0.2,
 flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
 flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
 flags.DEFINE_float("scale", 1., "Regularization scale to use", lower_bound=0.)
-flags.DEFINE_float("scale_increment", 0.1, 
-                   "Regularization increment per IPFP iteration to use", 
+flags.DEFINE_float("scale_increment", 1., 
+                   "Increment to regularization scale per IPFP iteration",
                    lower_bound=0.)
 flags.DEFINE_float("sigma", 1e-3, "STD to use in Gaussian.")
 
@@ -178,8 +178,11 @@ class Model(pl.LightningModule):
             self.optim_likelihood = self.likelihood_forwards
             self.data_type = "data"
 
-        # self.scale = min(FLAGS.scale * self.ipfp_iteration, FLAGS.scale)
-        self.scale = min(FLAGS.scale_increment * self.ipfp_iteration, FLAGS.scale)
+        # self.scale = min(FLAGS.scale *
+        #                  self.ipfp_iteration, FLAGS.scale)
+
+        self.scale = min(FLAGS.scale_increment *
+                         self.ipfp_iteration, FLAGS.scale)
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
