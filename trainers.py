@@ -16,6 +16,7 @@ from models import Model
 
 flags.DEFINE_bool("restore", False, "Whether to restore previous params from checkpoint.", short_name="r")
 flags.DEFINE_bool("predict", False, "Whether to only do predictions.", short_name="p")
+flags.DEFINE_bool("debug", False, "Debugging.", short_name="d")
 flags.DEFINE_string("restore_date", "", "Which date folder to restore checkpoint from. If empty, will get newest")
 flags.DEFINE_string("restore_time", "", "Which time folder to restore checkpoint from. If empty, will get newest")
 flags.DEFINE_integer("restore_epoch", -1, "Which epoch to restore.")
@@ -93,7 +94,6 @@ class ModelTrainer:
         else:
             resume_from_checkpoint = None
 
-
         self.define_trainer(resume_from_checkpoint)
 
         # Data
@@ -103,7 +103,8 @@ class ModelTrainer:
 
         # Model
         if FLAGS.predict or FLAGS.restore:
-            self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"{epoch}")
+            self.model = Model.load_from_checkpoint(
+                self.checkpoint_folder + f"{epoch}")
         else:
             self.model = Model(self.data.observed_dims, not(FLAGS.restore or FLAGS.predict), True,
                                self.results_folder, self.data.max_diffusion)
@@ -117,29 +118,35 @@ class ModelTrainer:
         if not FLAGS.predict:
             try:
                 self.trainer.fit(self.model, self.data)
-            except OSError as e: # In case there's a Input/Output error from the cluster
+            except OSError as e:  # In case there's a Input/Output error from the cluster
                 self.cur_restart += 1
                 if self.cur_restart <= MAX_RESTARTS:
-                    print(f"OS Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})")
-                    time.sleep(30) # Wait for a bit, because usually the error lasts for a few seconds
+                    print(
+                        f"OS Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})")
+                    # Wait for a bit, because usually the error lasts for a few seconds
+                    time.sleep(30)
                     self.restart_trainer()
                     self.run()
                 else:
                     print(f"OS Error! MAX_RESTARTS exceeded. Stoppping process.")
-                    print(e)
-            except RuntimeError as e: # In case the optimizer makes parameters go to nan/inf
-                self.cur_restart += 1
-                if self.cur_restart <= MAX_RESTARTS:
-                    print(f"Runtime Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})")
-                    self.restart_trainer()
-                    self.run()
+                    raise e
+            except RuntimeError as e:  # In case the optimizer makes parameters go to nan/inf
+                if FLAGS.debug:
+                    raise e
                 else:
-                    print(f"Runtime Error! MAX_RESTARTS exceeded. Stoppping process.")
-                    print(e)
+                    self.cur_restart += 1
+                    if self.cur_restart <= MAX_RESTARTS:
+                        print(
+                            f"Runtime Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})")
+                        self.restart_trainer()
+                        self.run()
+                    else:
+                        print(f"Runtime Error! MAX_RESTARTS exceeded. Stoppping process.")
+                        raise e
         else:
             self.trainer.validate(self.model, self.data)
-    
-    def define_trainer(self, resume_from_checkpoint: Optional[str]=None):
+
+    def define_trainer(self, resume_from_checkpoint: Optional[str] = None):
         if FLAGS.gpus > 1:
             self.trainer = Trainer(
                 callbacks=[self.checkpoint_callback],
@@ -161,7 +168,6 @@ class ModelTrainer:
                 logger=self.csv_logger,
                 log_every_n_steps=2,
             )
-    
 
     def restart_trainer(self):
         # Checks if there is any checkpoint
@@ -170,12 +176,12 @@ class ModelTrainer:
             # If not, creates a new model
             resume_from_checkpoint = None
             self.model = Model(
-                self.data.observed_dims, not(FLAGS.restore or FLAGS.predict), 
+                self.data.observed_dims, not(FLAGS.restore or FLAGS.predict),
                 True, self.results_folder, self.data.max_diffusion)
         else:
             # Else, gets model from latest epoch
-            epoch= (sorted(
-                Path(self.checkpoint_folder).iterdir(), 
+            epoch = (sorted(
+                Path(self.checkpoint_folder).iterdir(),
                 key=os.path.getmtime)[-1]).parts[-1]
             resume_from_checkpoint = self.checkpoint_folder + f"{epoch}"
             self.model = Model.load_from_checkpoint(

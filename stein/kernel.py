@@ -75,9 +75,10 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
             us = (i - torch.diag_embed(torch.diagonal(i, dim1=-1, dim2=-2)) 
                   for i in us)
             scale = 1 / (theta.shape[-2] * (theta.shape[-2] - 1))
+            return (torch.abs(torch.flatten(i, -2, -1).sum(-1)) * scale 
+                    for i in us)
         else:
             scale = 1 / theta.shape[-2]**2
-
-        return (torch.abs(torch.flatten(i, -2, -1).sum(-1)) * scale for i in us)
+            return (torch.flatten(i, -2, -1).sum(-1) * scale for i in us)
 
 
