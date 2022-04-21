@@ -41,6 +41,12 @@ flags.DEFINE_enum("solver_val", "srk", [
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
+flags.DEFINE_bool("no_prior_last_step", True, 
+                  "Whether to set the prior KSD to 0 at last step.")
+flags.DEFINE_bool("use_brownian_initial", True,
+                  "Whether to use Brownian motion as initial SDE.")
+flags.DEFINE_bool("apply_prior_initial", False,
+                  "Whether to apply KSD prior in initial IPFP iteration.")
 
 FLAGS = flags.FLAGS
 
@@ -127,8 +133,13 @@ class Model(pl.LightningModule):
         # Prior
         self.prior_sde: prior_sdes.BasePriorSDE = \
             prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
-        self.initial_prior_sde: prior_sdes.BasePriorSDE = \
-            prior_sdes.prior_sdes_dict["brownian"](observed_dims)
+        
+        if FLAGS.use_brownian_initial:
+            self.initial_prior_sde: prior_sdes.BasePriorSDE = \
+                prior_sdes.prior_sdes_dict["brownian"](observed_dims)
+        else:
+            self.initial_prior_sde: prior_sdes.BasePriorSDE = \
+                prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
 
         self.initial_prior_sde.g = lambda t, x: self.diffusion(x, t)
         self.prior_sde.g = lambda t, x: self.diffusion(x, t)
@@ -151,16 +162,6 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
-    def alpha_t(self, t):
-        if FLAGS.alpha_function == "quadratic":
-            return (- 4 * t**2 / self.final_t**2 + 4 * t / self.final_t) * self.scale
-        else:
-            cutoff = FLAGS.linear_alpha_cutoff
-            return self.scale * ((cutoff / self.final_t) * t * (t < self.final_t / cutoff)
-                                 + 1 * (t >= self.final_t / cutoff) *
-                                 (t < (cutoff-1) * self.final_t / cutoff)
-                                 + (-cutoff / self.final_t * t + cutoff) * (t >= (cutoff-1) * self.final_t / cutoff))
-
     def get_drift_diffusion(self, first: bool, forward: bool):
         if self.first:
             self.solve_sde = self.initial_prior_sde
@@ -181,8 +182,11 @@ class Model(pl.LightningModule):
         # self.scale = min(FLAGS.scale *
         #                  self.ipfp_iteration, FLAGS.scale)
 
-        self.scale = min(FLAGS.scale_increment *
-                         self.ipfp_iteration, FLAGS.scale)
+        if FLAGS.apply_prior_initial:
+            self.scale = FLAGS.scale
+        else:
+            self.scale = min(FLAGS.scale_increment *
+                            self.ipfp_iteration, FLAGS.scale)
 
     @staticmethod
     def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
@@ -239,7 +243,8 @@ class Model(pl.LightningModule):
             ksd_prior
         )
 
-        ksd_prior[-1] = ksd_prior[-1] * 0.
+        if FLAGS.no_prior_last_step:
+            ksd_prior[-1] = ksd_prior[-1] * 0.
 
         obj = ksd.sum() + self.scale * ksd_prior.sum()
         metrics = {"ksd": ksd.sum() * self.sigma**4,
@@ -291,7 +296,7 @@ class Model(pl.LightningModule):
             else:
                 loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
             self.manual_backward(loss)
-            torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
         self.log("training", metrics, on_step=True,
                  on_epoch=False, add_dataloader_idx=False)
@@ -386,11 +391,11 @@ class Model(pl.LightningModule):
         self.get_drift_diffusion(self.first, self.forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.AdamW([
+        optim_backward = torch.optim.Adam([
             {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.likelihood_backwards.parameters(), "lr": FLAGS.learning_rate}
         ])
-        optim_forward = torch.optim.AdamW([
+        optim_forward = torch.optim.Adam([
             {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
             {"params": self.likelihood_forwards.parameters(), "lr": FLAGS.learning_rate}
         ])
