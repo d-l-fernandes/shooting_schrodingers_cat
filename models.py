@@ -183,12 +183,12 @@ class Model(pl.LightningModule):
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
     def get_drift_diffusion(self, first: bool, forward: bool):
-        if self.first:
+        if first:
             self.solve_sde = self.initial_prior_sde
             self.optim_sde = self.backward_sde
             self.optim_likelihood = self.likelihood_backwards
             self.data_type = "prior"
-        elif self.going_forward:
+        elif forward:
             self.solve_sde = self.forward_sde
             self.optim_sde = self.backward_sde
             self.optim_likelihood = self.likelihood_backwards
@@ -212,36 +212,31 @@ class Model(pl.LightningModule):
             xs = integrate(sde, x_0, time_values, method="em")
         else:
             if parallel_time_steps:
-                xs = integrate_parallel_time_steps(
-                    sde, x_0, time_values, method=method)
+                xs = integrate_parallel_time_steps(sde, x_0, time_values, method=method)
             else:
                 xs = integrate(sde, x_0, time_values, method=method)
         return xs
 
-    def loss(self, ys: Tensor, ys_prior: Tensor, sde):
+    def loss(self, ys: Tensor, sde):
         ys = torch.flip(ys, [0])
 
         s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
 
         time_values = self.time_values.to(ys.device).to(ys.dtype)
-        xs = self.solve(s_is, sde, time_values,
-                        parallel_time_steps=True, method=FLAGS.solver)
+        xs = self.solve(s_is, sde, time_values, parallel_time_steps=True, method=FLAGS.solver)
 
         s_is = s_is.permute(0, 2, 1, 3)
         xs = xs.permute(1, 0, 2, 3)
 
         # Likelihood
         p_ys = self.optim_likelihood(ys[1:], self.sigma)
-        # p_ys_prior = self.optim_likelihood(ys_prior, self.sigma)
-        p_ys_prior = self.prior_sde.transition_density(
-            time_values, s_is, self.forward)
+        p_ys_prior = self.prior_sde.transition_density(time_values, s_is, self.going_forward)
 
         # Variational KSD
         grad_p_ys = functorch.grad(lambda x: p_ys.log_prob(x).sum())(xs)
 
         xs = xs.permute(1, 2, 0, 3)
-        grad_p_ys_prior = functorch.grad(
-            lambda x: p_ys_prior.log_prob(x).sum())(xs)
+        grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
 
         grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
 

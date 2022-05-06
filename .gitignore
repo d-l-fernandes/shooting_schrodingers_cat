@@ -156,3 +156,5 @@ misc/test.py
 experiments/bounds/run_solver.sh
 experiments/brownian_prior/run_all.sh
 experiments/brownian_prior_dsb/run_all.sh
+
+experiments/double_well_prior/run_gaussian_to_gaussian_mine.sh

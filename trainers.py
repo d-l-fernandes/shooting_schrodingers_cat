@@ -1,5 +1,4 @@
 import os
-os.environ['MPLCONFIGDIR'] = os.getcwd() + "/configs/"
 from pathlib import Path
 import time
 from typing import Optional
@@ -13,16 +12,29 @@ import datetime
 from datasets import datasets_dict, BaseDataGenerator
 from models import Model
 
+os.environ["MPLCONFIGDIR"] = os.getcwd() + "/configs/"
 
-flags.DEFINE_bool("restore", False, "Whether to restore previous params from checkpoint.", short_name="r")
+flags.DEFINE_bool(
+    "restore",
+    False,
+    "Whether to restore previous params from checkpoint.",
+    short_name="r",
+)
 flags.DEFINE_bool("predict", False, "Whether to only do predictions.", short_name="p")
 flags.DEFINE_bool("debug", False, "Debugging.", short_name="d")
-flags.DEFINE_string("restore_date", "", "Which date folder to restore checkpoint from. If empty, will get newest")
-flags.DEFINE_string("restore_time", "", "Which time folder to restore checkpoint from. If empty, will get newest")
+flags.DEFINE_string(
+    "restore_date",
+    "",
+    "Which date folder to restore checkpoint from. If empty, will get newest",
+)
+flags.DEFINE_string(
+    "restore_time",
+    "",
+    "Which time folder to restore checkpoint from. If empty, will get newest",
+)
 flags.DEFINE_integer("restore_epoch", -1, "Which epoch to restore.")
 
-flags.DEFINE_integer("gpus", 1, "Number of GPUs to use",
-                     lower_bound=0)
+flags.DEFINE_integer("gpus", 1, "Number of GPUs to use", lower_bound=0)
 flags.DEFINE_integer("eval_frequency", 50, "How often to evaluate the model.")
 
 FLAGS = flags.FLAGS
@@ -38,19 +50,25 @@ class ModelTrainer:
 
         now = datetime.datetime.now()
 
-        if not(FLAGS.restore or FLAGS.predict):
+        if not (FLAGS.restore or FLAGS.predict):
             date = now.strftime("%Y-%m-%d")
             time = now.strftime("%H:%M:%S")
             parent_folder += f"{date}/{time}/"
         else:
-            date = parent_folder + FLAGS.restore_date \
-                if FLAGS.restore_date != "" else sorted(Path(parent_folder).iterdir(), key=os.path.getmtime)[-1]
+            date = (
+                parent_folder + FLAGS.restore_date
+                if FLAGS.restore_date != ""
+                else sorted(Path(parent_folder).iterdir(), key=os.path.getmtime)[-1]
+            )
             parent_folder = f"{date}/"
             if not os.path.exists(parent_folder):
                 raise RuntimeError(f"{parent_folder} does not exist")
 
-            time = parent_folder + FLAGS.restore_time \
-                if FLAGS.restore_time != "" else sorted(Path(parent_folder).iterdir(), key=os.path.getmtime)[-1]
+            time = (
+                parent_folder + FLAGS.restore_time
+                if FLAGS.restore_time != ""
+                else sorted(Path(parent_folder).iterdir(), key=os.path.getmtime)[-1]
+            )
             parent_folder = f"{time}/"
             if not os.path.exists(parent_folder):
                 raise RuntimeError(f"{parent_folder} does not exist")
@@ -68,23 +86,35 @@ class ModelTrainer:
         self.checkpoint_folder = parent_folder + "checkpoint/"
 
         # Create Folders
-        for d in [self.summary_folder, self.results_folder, self.results_folder, self.checkpoint_folder]:
+        for d in [
+            self.summary_folder,
+            self.results_folder,
+            self.results_folder,
+            self.checkpoint_folder,
+        ]:
             if not os.path.exists(d):
                 os.makedirs(d)
 
         if FLAGS.restore or FLAGS.predict:
-            epoch = f"epoch={FLAGS.restore_epoch}" \
-                if FLAGS.restore_epoch != -1 \
-                else (sorted(Path(self.checkpoint_folder).iterdir(), key=os.path.getmtime)[-1]).parts[-1]
+            epoch = (
+                f"epoch={FLAGS.restore_epoch}"
+                if FLAGS.restore_epoch != -1
+                else (
+                    sorted(
+                        Path(self.checkpoint_folder).iterdir(), key=os.path.getmtime
+                    )[-1]
+                ).parts[-1]
+            )
 
         # Save flags
         FLAGS.append_flags_into_file(parent_folder + "flags.txt")
 
         # Model checkpoint manager
-        self.checkpoint_callback = ModelCheckpoint(dirpath=self.checkpoint_folder,
-                                                   filename='{epoch}',
-                                                   save_top_k=-1,
-                                                   )
+        self.checkpoint_callback = ModelCheckpoint(
+            dirpath=self.checkpoint_folder,
+            filename="{epoch}",
+            save_top_k=-1,
+        )
 
         # Logger
         self.csv_logger = pl_loggers.CSVLogger(self.summary_folder, version=0)
@@ -103,11 +133,15 @@ class ModelTrainer:
 
         # Model
         if FLAGS.predict or FLAGS.restore:
-            self.model = Model.load_from_checkpoint(
-                self.checkpoint_folder + f"{epoch}")
+            self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"{epoch}")
         else:
-            self.model = Model(self.data.observed_dims, not(FLAGS.restore or FLAGS.predict), True,
-                               self.results_folder, self.data.max_diffusion)
+            self.model = Model(
+                self.data.observed_dims,
+                not (FLAGS.restore or FLAGS.predict),
+                True,
+                self.results_folder,
+                self.data.max_diffusion,
+            )
 
         # Number of restarts executed
         self.cur_restart = 0
@@ -122,7 +156,8 @@ class ModelTrainer:
                 self.cur_restart += 1
                 if self.cur_restart <= MAX_RESTARTS:
                     print(
-                        f"OS Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})")
+                        f"OS Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})"
+                    )
                     # Wait for a bit, because usually the error lasts for a few seconds
                     time.sleep(30)
                     self.restart_trainer()
@@ -137,11 +172,12 @@ class ModelTrainer:
                     self.cur_restart += 1
                     if self.cur_restart <= MAX_RESTARTS:
                         print(
-                            f"Runtime Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})")
+                            f"Value Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})"
+                        )
                         self.restart_trainer()
                         self.run()
                     else:
-                        print(f"Runtime Error! MAX_RESTARTS exceeded. Stoppping process.")
+                        print(f"Value Error! MAX_RESTARTS exceeded. Stoppping process.")
                         raise e
         else:
             self.trainer.validate(self.model, self.data)
@@ -156,7 +192,7 @@ class ModelTrainer:
                 check_val_every_n_epoch=FLAGS.eval_frequency,
                 logger=self.csv_logger,
                 strategy="ddp",
-                log_every_n_steps=2
+                log_every_n_steps=2,
             )
         else:
             self.trainer = Trainer(
@@ -176,15 +212,18 @@ class ModelTrainer:
             # If not, creates a new model
             resume_from_checkpoint = None
             self.model = Model(
-                self.data.observed_dims, not(FLAGS.restore or FLAGS.predict),
-                True, self.results_folder, self.data.max_diffusion)
+                self.data.observed_dims,
+                not (FLAGS.restore or FLAGS.predict),
+                True,
+                self.results_folder,
+                self.data.max_diffusion,
+            )
         else:
             # Else, gets model from latest epoch
-            epoch = (sorted(
-                Path(self.checkpoint_folder).iterdir(),
-                key=os.path.getmtime)[-1]).parts[-1]
+            epoch = (
+                sorted(Path(self.checkpoint_folder).iterdir(), key=os.path.getmtime)[-1]
+            ).parts[-1]
             resume_from_checkpoint = self.checkpoint_folder + f"{epoch}"
-            self.model = Model.load_from_checkpoint(
-                self.checkpoint_folder + f"{epoch}")
+            self.model = Model.load_from_checkpoint(self.checkpoint_folder + f"{epoch}")
 
         self.define_trainer(resume_from_checkpoint)
