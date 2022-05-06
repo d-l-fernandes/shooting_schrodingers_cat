@@ -130,7 +130,7 @@ class ModelTrainer:
                 else:
                     print(f"OS Error! MAX_RESTARTS exceeded. Stoppping process.")
                     raise e
-            except RuntimeError as e:  # In case the optimizer makes parameters go to nan/inf
+            except ValueError as e:  # In case the optimizer makes parameters go to nan/inf
                 if FLAGS.debug:
                     raise e
                 else:

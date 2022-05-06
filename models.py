@@ -13,40 +13,44 @@ from sde import drifts, diffusions, prior_sdes, priors, sinkhorn
 from weak_solver.sdeint import integrate, integrate_parallel_time_steps
 from stein import kernel
 
-
 flags.DEFINE_integer("num_steps", 20, "Number of time steps", lower_bound=1)
-flags.DEFINE_integer(
-    "num_iter", 25, "Number of IPFP iterations", lower_bound=1)
+flags.DEFINE_integer("num_iter", 25, "Number of IPFP iterations", lower_bound=1)
 flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
-flags.DEFINE_integer("batch_repeats", 20,
-                     "Optimizer steps per batch", lower_bound=1)
-flags.DEFINE_integer(
-    "num_samples", 5, "Number of one-step samples", lower_bound=1)
+flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
+flags.DEFINE_integer("num_samples", 5, "Number of one-step samples", lower_bound=1)
 
-flags.DEFINE_float("final_time", 1., "Final time.")
+flags.DEFINE_float("final_time", 1.0, "Final time.")
 flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
-flags.DEFINE_float("schedule_scale", 0.1**0.2,
-                   "Learning rate scheduler scale.")
+flags.DEFINE_float("schedule_scale", 0.1**0.2, "Learning rate scheduler scale.")
 flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
-flags.DEFINE_float("grad_clip", 1., "Norm of gradient clip to use.")
-flags.DEFINE_float("scale", 1., "Regularization scale to use", lower_bound=0.)
-flags.DEFINE_float("scale_increment", 1., 
-                   "Increment to regularization scale per IPFP iteration",
-                   lower_bound=0.)
+flags.DEFINE_float("grad_clip", 1.0, "Norm of gradient clip to use.")
+flags.DEFINE_float("scale", 1.0, "Regularization scale to use", lower_bound=0.0)
+flags.DEFINE_float(
+    "scale_increment",
+    1.0,
+    "Increment to regularization scale per IPFP iteration",
+    lower_bound=0.0,
+)
 flags.DEFINE_float("sigma", 1e-3, "STD to use in Gaussian.")
 
 flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
-flags.DEFINE_enum("solver_val", "srk", [
-                  "em", "srk", "rossler"], "Solver to use in validation")
+flags.DEFINE_enum(
+    "solver_val", "srk", ["em", "srk", "rossler"], "Solver to use in validation"
+)
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
-flags.DEFINE_bool("no_prior_last_step", True, 
-                  "Whether to set the prior KSD to 0 at last step.")
-flags.DEFINE_bool("use_brownian_initial", True,
-                  "Whether to use Brownian motion as initial SDE.")
-flags.DEFINE_bool("apply_prior_initial", False,
-                  "Whether to apply KSD prior in initial IPFP iteration.")
+flags.DEFINE_bool(
+    "no_prior_last_step", True, "Whether to set the prior KSD to 0 at last step."
+)
+flags.DEFINE_bool(
+    "use_brownian_initial", True, "Whether to use Brownian motion as initial SDE."
+)
+flags.DEFINE_bool(
+    "apply_prior_initial",
+    False,
+    "Whether to apply KSD prior in initial IPFP iteration.",
+)
 
 FLAGS = flags.FLAGS
 
@@ -63,16 +67,15 @@ class Metrics(NamedTuple):
     std_data: Tensor
 
     def __add__(self, other: Metrics):
-        return Metrics(torch.cat((self.wasserstein_prior, other.wasserstein_prior)),
-                       torch.cat((self.wasserstein_data,
-                                 other.wasserstein_data)),
-                       torch.cat((self.wasserstein_total,
-                                 other.wasserstein_total)),
-                       torch.cat((self.mean_prior, other.mean_prior)),
-                       torch.cat((self.mean_data, other.mean_data)),
-                       torch.cat((self.std_prior, other.std_prior)),
-                       torch.cat((self.std_data, other.std_data)),
-                       )
+        return Metrics(
+            torch.cat((self.wasserstein_prior, other.wasserstein_prior)),
+            torch.cat((self.wasserstein_data, other.wasserstein_data)),
+            torch.cat((self.wasserstein_total, other.wasserstein_total)),
+            torch.cat((self.mean_prior, other.mean_prior)),
+            torch.cat((self.mean_data, other.mean_data)),
+            torch.cat((self.std_prior, other.std_prior)),
+            torch.cat((self.std_data, other.std_data)),
+        )
 
 
 class Output(NamedTuple):
@@ -86,68 +89,85 @@ class Output(NamedTuple):
             torch.cat((self.z_values_backward, other.z_values_backward)),
             torch.cat((self.z_values_forward, other.z_values_forward)),
             torch.cat((self.x_data, other.x_data)),
-            torch.cat((self.x_prior, other.x_prior))
+            torch.cat((self.x_prior, other.x_prior)),
         )
 
 
 class Model(pl.LightningModule):
-    def __init__(self, observed_dims: int, first: bool, forward: bool, results_folder: str, max_diffusion: float):
+    def __init__(
+        self,
+        observed_dims: int,
+        first: bool,
+        forward: bool,
+        results_folder: str,
+        max_diffusion: float,
+    ):
         super().__init__()
 
         self.first = first
-        self.forward = forward
+        self.going_forward = forward
         self.results_folder = results_folder
         self.max_diffusion = max_diffusion
         self.automatic_optimization = False
         self.observed_dims = observed_dims
-        self.metrics = Metrics(torch.tensor([]),
-                               torch.tensor([]),
-                               torch.tensor([]),
-                               torch.tensor([]),
-                               torch.tensor([]),
-                               torch.tensor([]),
-                               torch.tensor([]),
-                               )
-        self.wasserstein_loss = sinkhorn.SinkhornDistance(
-            eps=0.05, max_iter=100)
+        self.metrics = Metrics(
+            torch.tensor([]),
+            torch.tensor([]),
+            torch.tensor([]),
+            torch.tensor([]),
+            torch.tensor([]),
+            torch.tensor([]),
+            torch.tensor([]),
+        )
+        self.wasserstein_loss = sinkhorn.SinkhornDistance(eps=0.05, max_iter=100)
         self.save_hyperparameters()
 
         # Time
         self.final_t = FLAGS.final_time
-        self.time_values = torch.linspace(0, self.final_t, FLAGS.num_steps+1,
-                                          device=self.device)
+        self.time_values = torch.linspace(
+            0, self.final_t, FLAGS.num_steps + 1, device=self.device
+        )
         self.time_values_eval = torch.linspace(
-            0, self.final_t, FLAGS.num_steps, device=self.device)
+            0, self.final_t, FLAGS.num_steps, device=self.device
+        )
 
         # SDE
-        self.drift_forward: drifts.BaseDrift = \
-            drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
-        self.drift_backward: drifts.BaseDrift = \
-            drifts.drifts_dict[FLAGS.drift](observed_dims, observed_dims)
+        self.drift_forward: drifts.BaseDrift = drifts.drifts_dict[FLAGS.drift](
+            observed_dims, observed_dims
+        )
+        self.drift_backward: drifts.BaseDrift = drifts.drifts_dict[FLAGS.drift](
+            observed_dims, observed_dims
+        )
         self.diffusion = diffusions.Scalar(
-            observed_dims, observed_dims, self.final_t, max_diffusion)
+            observed_dims, observed_dims, self.final_t, max_diffusion
+        )
 
         self.backward_sde = prior_sdes.SDE(self.drift_backward, self.diffusion)
         self.forward_sde = prior_sdes.SDE(self.drift_forward, self.diffusion)
 
         # Prior
-        self.prior_sde: prior_sdes.BasePriorSDE = \
-            prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
-        
+        self.prior_sde: prior_sdes.BasePriorSDE = prior_sdes.prior_sdes_dict[
+            FLAGS.prior_sde
+        ](observed_dims)
+
         if FLAGS.use_brownian_initial:
-            self.initial_prior_sde: prior_sdes.BasePriorSDE = \
+            self.initial_prior_sde: prior_sdes.BasePriorSDE = (
                 prior_sdes.prior_sdes_dict["brownian"](observed_dims)
+            )
         else:
-            self.initial_prior_sde: prior_sdes.BasePriorSDE = \
+            self.initial_prior_sde: prior_sdes.BasePriorSDE = (
                 prior_sdes.prior_sdes_dict[FLAGS.prior_sde](observed_dims)
+            )
 
         self.initial_prior_sde.g = lambda t, x: self.diffusion(x, t)
         self.prior_sde.g = lambda t, x: self.diffusion(x, t)
 
-        self.likelihood_backwards: priors.BasePrior \
-            = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
-        self.likelihood_forwards: priors.BasePrior \
-            = priors.priors_dict[FLAGS.prior_dist](observed_dims, observed_dims)
+        self.likelihood_backwards: priors.BasePrior = priors.priors_dict[
+            FLAGS.prior_dist
+        ](observed_dims, observed_dims)
+        self.likelihood_forwards: priors.BasePrior = priors.priors_dict[
+            FLAGS.prior_dist
+        ](observed_dims, observed_dims)
 
         self.solve_sde = None
         self.optim_sde = None
@@ -157,9 +177,9 @@ class Model(pl.LightningModule):
         # Sigma exponent
         self.ipfp_iteration = 0
         self.sigma = FLAGS.sigma
-        self.scale = 0.
+        self.scale = 0.0
 
-        self.get_drift_diffusion(self.first, self.forward)
+        self.get_drift_diffusion(self.first, self.going_forward)
         self.optim_dict_conv = {"prior": 0, "data": 1}
 
     def get_drift_diffusion(self, first: bool, forward: bool):
@@ -168,7 +188,7 @@ class Model(pl.LightningModule):
             self.optim_sde = self.backward_sde
             self.optim_likelihood = self.likelihood_backwards
             self.data_type = "prior"
-        elif self.forward:
+        elif self.going_forward:
             self.solve_sde = self.forward_sde
             self.optim_sde = self.backward_sde
             self.optim_likelihood = self.likelihood_backwards
@@ -179,17 +199,15 @@ class Model(pl.LightningModule):
             self.optim_likelihood = self.likelihood_forwards
             self.data_type = "data"
 
-        # self.scale = min(FLAGS.scale *
-        #                  self.ipfp_iteration, FLAGS.scale)
-
         if FLAGS.apply_prior_initial:
             self.scale = FLAGS.scale
         else:
-            self.scale = min(FLAGS.scale_increment *
-                            self.ipfp_iteration, FLAGS.scale)
+            self.scale = min(FLAGS.scale_increment * self.ipfp_iteration, FLAGS.scale)
 
     @staticmethod
-    def solve(x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em") -> Tensor:
+    def solve(
+        x_0: Tensor, sde, time_values, parallel_time_steps=False, method="em"
+    ) -> Tensor:
         if FLAGS.do_dsb:
             xs = integrate(sde, x_0, time_values, method="em")
         else:

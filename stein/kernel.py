@@ -9,7 +9,7 @@ flags.DEFINE_bool("ksd_unbiased", True,
 flags.DEFINE_bool("ksd_detached", False,
                   "Whether to use detach h in ksd estimator.")
 
-flags.DEFINE_enum("ksd_scale", "median", ["median", "mean"],
+flags.DEFINE_enum("ksd_scale", "mean", ["median", "mean"],
                   "Which type of scale to use for ksd estimator.")
 
 Tensor = torch.Tensor
@@ -17,10 +17,9 @@ Tensor = torch.Tensor
 FLAGS = flags.FLAGS
 
 
-def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]], 
-    sigma) -> Tensor:
+def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]]) -> Union[Tensor, Tuple[Tensor]]:
 
-    diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3) 
+    diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3)
     pairwise_dists = torch.sum(diffs**2, -1)
 
     indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
@@ -59,26 +58,16 @@ def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]],
         else:
             return torch.flatten(u, -2, -1).sum(-1) / theta.shape[-2]**2
     else:
-        first_terms =  \
-            (torch.einsum("...ab,...ac,...cb->...ac", i, kxy, i) 
-            for i in p_grad)
-        second_terms = \
-            (torch.einsum("...ab,...acb->...ac", i, -dxdkxy) 
-            for i in p_grad)
-        third_terms = \
-            (torch.einsum("...acb,...cb->...ac", dxdkxy, i)
-            for i in p_grad)
+        first_terms = (torch.einsum("...ab,...ac,...cb->...ac", i, kxy, i) for i in p_grad)
+        second_terms = (torch.einsum("...ab,...acb->...ac", i, -dxdkxy) for i in p_grad)
+        third_terms = (torch.einsum("...acb,...cb->...ac", dxdkxy, i) for i in p_grad)
 
         us = (sum(i) for i in zip(first_terms, second_terms, third_terms))
 
         if FLAGS.ksd_unbiased:
-            us = (i - torch.diag_embed(torch.diagonal(i, dim1=-1, dim2=-2)) 
-                  for i in us)
+            us = (i - torch.diag_embed(torch.diagonal(i, dim1=-1, dim2=-2)) for i in us)
             scale = 1 / (theta.shape[-2] * (theta.shape[-2] - 1))
-            return (torch.abs(torch.flatten(i, -2, -1).sum(-1)) * scale 
-                    for i in us)
+            return tuple(torch.abs(torch.flatten(i, -2, -1).sum(-1)) * scale for i in us)
         else:
             scale = 1 / theta.shape[-2]**2
-            return (torch.flatten(i, -2, -1).sum(-1) * scale for i in us)
-
-
+            return tuple(torch.flatten(i, -2, -1).sum(-1) * scale for i in us)
