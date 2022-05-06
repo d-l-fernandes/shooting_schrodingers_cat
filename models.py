@@ -240,10 +240,12 @@ class Model(pl.LightningModule):
 
         grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
 
-        ksd, ksd_prior = \
-            kernel.stein_discrepancy(
-                xs, (grad_p_ys, grad_p_ys_prior), self.sigma)
+        ksds = kernel.stein_discrepancy(
+            xs, tuple(grad_p_ys, grad_p_ys_prior)
+        )
 
+        ksd = ksds[0]
+        ksd_prior = ksds[1]
         ksd = ksd.mean(-1)
         ksd_prior = ksd_prior.mean(-1)
 
@@ -252,17 +254,19 @@ class Model(pl.LightningModule):
 
         ksd_prior = torch.einsum(
             "a,a...->a...",
-            (delta_ts**0.5 * diffusions)**4 / self.sigma**4,
-            ksd_prior
+            (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
+            ksd_prior,
         )
 
         if FLAGS.no_prior_last_step:
-            ksd_prior[-1] = ksd_prior[-1] * 0.
+            ksd_prior[-1] = ksd_prior[-1] * 0.0
 
         obj = ksd.sum() + self.scale * ksd_prior.sum()
-        metrics = {"ksd": ksd.sum() * self.sigma**4,
-                   "ksd_prior": ksd_prior.sum() * self.sigma**4,
-                   "obj": obj * self.sigma**4}
+        metrics = {
+            "ksd": ksd.sum() * self.sigma**4,
+            "ksd_prior": ksd_prior.sum() * self.sigma**4,
+            "obj": obj * self.sigma**4,
+        }
         return obj, metrics
 
     def loss_dsb(self, ys: Tensor, sde, other_sde):
@@ -270,74 +274,89 @@ class Model(pl.LightningModule):
 
         obj = ys[:-1] - ys[1:]
         time_values = self.time_values.to(ys.device).to(ys.dtype)
-        drifts_term = \
-            sde.f(time_values[:-1], ys[:-1]) - other_sde.f(time_values[:-1], ys[:-1]) + \
-            other_sde.f(time_values[1:], ys[1:])
+        drifts_term = (
+            sde.f(time_values[:-1], ys[:-1])
+            - other_sde.f(time_values[:-1], ys[:-1])
+            + other_sde.f(time_values[1:], ys[1:])
+        )
 
         # TODO replace delta_t with difference of t_values
         obj = (obj + self.delta_t * drifts_term) ** 2
         metrics = {"obj": obj.mean()}
         return obj.mean(), metrics
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, _):
         optim = self.optimizers()[self.optim_dict_conv[self.data_type]]
         x = batch[self.data_type]
 
         with torch.no_grad():
             if FLAGS.uniform_delta_t:
-                xs = self.solve(x, self.solve_sde,
-                                self.time_values, method=FLAGS.solver)
+                xs = self.solve(
+                    x, self.solve_sde, self.time_values, method=FLAGS.solver
+                )
             else:
                 delta_ts = torch.rand(FLAGS.num_steps, device=x.device)
                 delta_ts = delta_ts / delta_ts.sum() * self.final_t
                 self.time_values = torch.cat(
-                    (torch.tensor([0.], device=x.device), torch.cumsum(delta_ts, 0))).detach()
-                xs = self.solve(x, self.solve_sde,
-                                self.time_values, method=FLAGS.solver)
-                self.time_values = torch.abs(torch.flip(
-                    self.final_t - self.time_values, [0]))
-
-            time_values = self.time_values.to(xs.device).to(xs.dtype)
-            xs_prior = self.solve(torch.flip(xs[:-1], [0]), self.prior_sde,
-                                  time_values, parallel_time_steps=True, method=FLAGS.solver)
+                    (torch.tensor([0.0], device=x.device), torch.cumsum(delta_ts, 0))
+                ).detach()
+                xs = self.solve(
+                    x, self.solve_sde, self.time_values, method=FLAGS.solver
+                )
+                self.time_values = torch.abs(
+                    torch.flip(self.final_t - self.time_values, [0])
+                )
 
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad()
             if FLAGS.do_dsb:
-                loss, metrics = self.loss_dsb(
-                    xs, self.optim_sde, self.solve_sde)
+                loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
             else:
-                loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
+                loss, metrics = self.loss(xs, self.optim_sde)
             self.manual_backward(loss)
             # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
-        self.log("training", metrics, on_step=True,
-                 on_epoch=False, add_dataloader_idx=False)
+        self.log(
+            "training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False
+        )
 
     def evaluate(self, x_prior: Tensor, x_data: Tensor) -> Output:
         if self.trainer.sanity_checking:
             z_backward = self.solve(
-                x_data, self.initial_prior_sde, self.time_values_eval, method=FLAGS.solver_val)
+                x_data,
+                self.initial_prior_sde,
+                self.time_values_eval,
+                method=FLAGS.solver_val,
+            )
             z_forward = self.solve(
-                x_prior, self.initial_prior_sde, self.time_values_eval, method=FLAGS.solver_val)
+                x_prior,
+                self.initial_prior_sde,
+                self.time_values_eval,
+                method=FLAGS.solver_val,
+            )
         else:
             z_backward = self.solve(
-                x_data, self.backward_sde, self.time_values_eval, method=FLAGS.solver_val)
+                x_data,
+                self.backward_sde,
+                self.time_values_eval,
+                method=FLAGS.solver_val,
+            )
             z_forward = self.solve(
-                x_prior, self.forward_sde, self.time_values_eval, method=FLAGS.solver_val)
+                x_prior,
+                self.forward_sde,
+                self.time_values_eval,
+                method=FLAGS.solver_val,
+            )
 
         output = Output(
-            z_backward.permute(1, 0, 2),
-            z_forward.permute(1, 0, 2),
-            x_data,
-            x_prior
+            z_backward.permute(1, 0, 2), z_forward.permute(1, 0, 2), x_data, x_prior
         )
 
         return output
 
-    def on_train_epoch_end(self, unused=None):
+    def on_train_epoch_end(self, _=None):
         if (self.current_epoch + 1) % FLAGS.num_iter == 0:
-            self.forward = not self.forward
+            self.going_forward = not self.going_forward
             if self.first:
                 self.first = False
 
@@ -347,10 +366,10 @@ class Model(pl.LightningModule):
                     lr_scheduler_backward.step()
                     lr_scheduler_forward.step()
                 self.ipfp_iteration += 1
-            self.get_drift_diffusion(self.first, self.forward)
+            self.get_drift_diffusion(self.first, self.going_forward)
             torch.cuda.empty_cache()
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
         x_prior = batch["prior"]
         x_data = batch["data"]
         output = self.evaluate(x_prior, x_data)
@@ -360,22 +379,28 @@ class Model(pl.LightningModule):
         final_output: Output = reduce(lambda x, y: x + y, outputs)
 
         prior_wasserstein = self.wasserstein_loss(
-            final_output.x_prior, final_output.z_values_backward[:, -1])
+            final_output.x_prior, final_output.z_values_backward[:, -1]
+        )
         data_wasserstein = self.wasserstein_loss(
-            final_output.x_data, final_output.z_values_forward[:, -1])
+            final_output.x_data, final_output.z_values_forward[:, -1]
+        )
         total_wasserstein = prior_wasserstein + data_wasserstein
 
-        metrics = Metrics(torch.tensor([prior_wasserstein]),
-                          torch.tensor([data_wasserstein]),
-                          torch.tensor([total_wasserstein]),
-                          final_output.z_values_backward[:, -1].mean(0, keepdim=True).cpu(),
-                          final_output.z_values_forward[:, -1].mean(0, keepdim=True).cpu(),
-                          final_output.z_values_backward[:, -1].std(0, keepdim=True).cpu(),
-                          final_output.z_values_forward[:, -1].std(0, keepdim=True).cpu(),
-                          )
+        metrics = Metrics(
+            torch.tensor([prior_wasserstein]),
+            torch.tensor([data_wasserstein]),
+            torch.tensor([total_wasserstein]),
+            final_output.z_values_backward[:, -1].mean(0, keepdim=True).cpu(),
+            final_output.z_values_forward[:, -1].mean(0, keepdim=True).cpu(),
+            final_output.z_values_backward[:, -1].std(0, keepdim=True).cpu(),
+            final_output.z_values_forward[:, -1].std(0, keepdim=True).cpu(),
+        )
         if not self.trainer.sanity_checking:
-            log_metrics = {"wasserstein_prior": prior_wasserstein, "wasserstein_data": data_wasserstein,
-                           "wasserstein_total": total_wasserstein}
+            log_metrics = {
+                "wasserstein_prior": prior_wasserstein,
+                "wasserstein_data": data_wasserstein,
+                "wasserstein_total": total_wasserstein,
+            }
             self.log("eval", log_metrics)
             self.log("data", data_wasserstein, prog_bar=True, logger=False)
             self.log("prior", prior_wasserstein, prog_bar=True, logger=False)
@@ -392,37 +417,49 @@ class Model(pl.LightningModule):
     def on_save_checkpoint(self, checkpoint):
         checkpoint["metrics"] = self.metrics
         checkpoint["first"] = self.first
-        checkpoint["forward"] = self.forward
+        checkpoint["forward"] = self.going_forward
         checkpoint["ipfp_iteration"] = self.ipfp_iteration
 
     def on_load_checkpoint(self, checkpoint):
         self.metrics = checkpoint["metrics"]
         self.first = checkpoint["first"]
-        self.forward = checkpoint["forward"]
+        self.going_forward = checkpoint["forward"]
         self.ipfp_iteration = checkpoint["ipfp_iteration"]
 
-        self.get_drift_diffusion(self.first, self.forward)
+        self.get_drift_diffusion(self.first, self.going_forward)
 
     def configure_optimizers(self):
-        optim_backward = torch.optim.Adam([
-            {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
-            {"params": self.likelihood_backwards.parameters(), "lr": FLAGS.learning_rate}
-        ])
-        optim_forward = torch.optim.Adam([
-            {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
-            {"params": self.likelihood_forwards.parameters(), "lr": FLAGS.learning_rate}
-        ])
+        optim_backward = torch.optim.Adam(
+            [
+                {"params": self.drift_backward.parameters(), "lr": FLAGS.learning_rate},
+                {
+                    "params": self.likelihood_backwards.parameters(),
+                    "lr": FLAGS.learning_rate,
+                },
+            ]
+        )
+        optim_forward = torch.optim.Adam(
+            [
+                {"params": self.drift_forward.parameters(), "lr": FLAGS.learning_rate},
+                {
+                    "params": self.likelihood_forwards.parameters(),
+                    "lr": FLAGS.learning_rate,
+                },
+            ]
+        )
         scheduler_backward = torch.optim.lr_scheduler.ExponentialLR(
-            optim_backward, FLAGS.schedule_scale)
+            optim_backward, FLAGS.schedule_scale
+        )
         scheduler_forward = torch.optim.lr_scheduler.ExponentialLR(
-            optim_forward, FLAGS.schedule_scale)
+            optim_forward, FLAGS.schedule_scale
+        )
         return [optim_backward, optim_forward], [scheduler_backward, scheduler_forward]
 
-    def make_plot_figs(self, output: Output,
-                       step: Union[int, str]) -> None:
+    def make_plot_figs(self, output: Output, step: Union[int, str]) -> None:
 
         fig_list, name_list = self.trainer.datamodule.plot_results(
-            output, self, self.metrics)
+            output, self, self.metrics
+        )
         self.save_figs(name_list, fig_list, step)
         plt.clf()
         plt.close("all")
@@ -431,10 +468,9 @@ class Model(pl.LightningModule):
         del output
         # gc.collect()
 
-    def save_figs(self,
-                  fig_names: List[str],
-                  figs: List[Figure],
-                  step: Union[int, str]) -> None:
+    def save_figs(
+        self, fig_names: List[str], figs: List[Figure], step: Union[int, str]
+    ) -> None:
 
         if type(step) == int:
             name = f"step_{step}"
