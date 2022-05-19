@@ -214,7 +214,7 @@ class Model(pl.LightningModule):
                 xs = integrate(sde, x_0, time_values, method=method)
         return xs
 
-    def loss(self, ys: Tensor, sde):
+    def loss(self, ys: Tensor, ys_prior: Tensor, sde):
         ys = torch.flip(ys, [0])
 
         s_is = torch.tile(ys[:-1].unsqueeze(1), (1, FLAGS.num_samples, 1, 1))
@@ -227,18 +227,19 @@ class Model(pl.LightningModule):
 
         # Likelihood
         p_ys = self.optim_likelihood(ys[1:], self.sigma)
-        p_ys_prior = self.prior_sde.transition_density(time_values, s_is, self.going_forward)
+        # p_ys_prior = self.prior_sde.transition_density(time_values, s_is, self.going_forward)
+        p_ys_prior = self.optim_likelihood(ys_prior, self.sigma)
 
         # Variational KSD
         grad_p_ys = functorch.grad(lambda x: p_ys.log_prob(x).sum())(xs)
-
-        xs = xs.permute(1, 2, 0, 3)
         grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
 
+        xs = xs.permute(1, 2, 0, 3)
         grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
+        grad_p_ys_prior = grad_p_ys_prior.permute(1, 2, 0, 3)
 
         ksds = kernel.stein_discrepancy(
-            xs, tuple(grad_p_ys, grad_p_ys_prior)
+            xs, (grad_p_ys, grad_p_ys_prior)
         )
 
         ksd = ksds[0]
@@ -246,19 +247,21 @@ class Model(pl.LightningModule):
         ksd = ksd.mean(-1)
         ksd_prior = ksd_prior.mean(-1)
 
-        delta_ts = time_values[1:] - time_values[:-1]
-        diffusions = sde.g(time_values[:-1], s_is)
+        # delta_ts = time_values[1:] - time_values[:-1]
+        # diffusions = sde.g(time_values[:-1], s_is)
+        #
+        # ksd_prior = torch.einsum(
+        #     "a,a...->a...",
+        #     (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
+        #     ksd_prior,
+        # )
+        #
+        ksd_prior[-1] = ksd_prior[-1] * int(not FLAGS.no_prior_last_step)
 
-        ksd_prior = torch.einsum(
-            "a,a...->a...",
-            (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
-            ksd_prior,
-        )
-
-        if FLAGS.no_prior_last_step:
-            ksd_prior[-1] = ksd_prior[-1] * 0.0
-
-        obj = ksd.sum() + self.scale * ksd_prior.sum()
+        # ksd_prior = torch.minimum(ksd_prior, self.scale * ksd_prior * ksd.sum().detach() / ksd_prior.sum().detach())
+        # obj = ksd.sum() + self.scale * ksd_prior.sum()
+        obj = (ksd + self.scale * ksd_prior).sum()
+        # obj = ksd.sum() + ksd_prior.sum()
         metrics = {
             "ksd": ksd.sum() * self.sigma**4,
             "ksd_prior": ksd_prior.sum() * self.sigma**4,
@@ -304,14 +307,18 @@ class Model(pl.LightningModule):
                     torch.flip(self.final_t - self.time_values, [0])
                 )
 
+        metrics = dict()
+
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad()
             if FLAGS.do_dsb:
                 loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
             else:
-                loss, metrics = self.loss(xs, self.optim_sde)
+                xs_prior = self.solve(torch.flip(xs, [0])[:-1], self.prior_sde,
+                                      self.time_values.to(xs.device).to(xs.dtype), True, method=FLAGS.solver)
+                loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
             self.manual_backward(loss)
-            # torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
+            torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
         self.log(
             "training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False
