@@ -50,6 +50,7 @@ flags.DEFINE_integer("batch_size", 10, "Batch Size.")
 flags.DEFINE_enum("prior", "gaussian", datasets_list, "Prior to use.")
 flags.DEFINE_enum("dataset", "blobs_2d", datasets_list, "Dataset to use.")
 flags.DEFINE_bool("normalize", True, "Whether to normalize data")
+flags.DEFINE_float("prior_scale", 1., "Scale parameter of prior dataset.")
 
 FLAGS = flags.FLAGS
 
@@ -125,7 +126,7 @@ class BaseDataGenerator(LightningDataModule):
                 self.xs_train = normalize(self.xs_train)
             loaders = {
                 "prior": DataLoader(
-                    self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=0),
+                    FLAGS.prior_scale * self.prior_dataset.xs_train, self.batch_size, shuffle=True, num_workers=0),
                 "data": DataLoader(self.xs_train, self.batch_size, shuffle=True, num_workers=0)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
@@ -139,7 +140,8 @@ class BaseDataGenerator(LightningDataModule):
                 self.prior_dataset.xs_test = normalize(self.prior_dataset.xs_test)
                 self.xs_test = normalize(self.xs_test)
             loaders = {
-                "prior": DataLoader(self.prior_dataset.xs_test, self.batch_size, num_workers=0, pin_memory=True),
+                "prior": DataLoader(FLAGS.prior_scale * self.prior_dataset.xs_test, self.batch_size,
+                                    num_workers=0, pin_memory=True),
                 "data": DataLoader(self.xs_test, self.batch_size, num_workers=0, pin_memory=True)}
             return CombinedLoader(loaders, "max_size_cycle")
         else:
