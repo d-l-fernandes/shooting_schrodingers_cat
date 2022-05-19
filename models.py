@@ -274,14 +274,14 @@ class Model(pl.LightningModule):
 
         obj = ys[:-1] - ys[1:]
         time_values = self.time_values.to(ys.device).to(ys.dtype)
-        drifts_term = (
-            sde.f(time_values[:-1], ys[:-1])
-            - other_sde.f(time_values[:-1], ys[:-1])
-            + other_sde.f(time_values[1:], ys[1:])
-        )
+        sde_f_values = functorch.vmap(sde.f)(time_values[:-1], ys[:-1])
+        other_sde_f_values = functorch.vmap(other_sde.f)(time_values[:-1], ys[:-1])
+        other_sde_f_values_2 = functorch.vmap(other_sde.f)(time_values[1:], ys[1:])
+        drifts_term = sde_f_values - other_sde_f_values + other_sde_f_values_2
 
-        # TODO replace delta_t with difference of t_values
-        obj = (obj + self.delta_t * drifts_term) ** 2
+        delta_ts = time_values[1:] - time_values[:-1]
+        drift_obj = torch.einsum("a,a...->a...", delta_ts, drifts_term)
+        obj = (obj + drift_obj) ** 2
         metrics = {"obj": obj.mean()}
         return obj.mean(), metrics
 
