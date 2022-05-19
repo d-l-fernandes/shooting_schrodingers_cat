@@ -147,7 +147,7 @@ class Model(pl.LightningModule):
             FLAGS.prior_sde
         ](observed_dims)
 
-        if FLAGS.use_brownian_initial:
+        if (not FLAGS.do_dsb) and FLAGS.use_brownian_initial:
             self.initial_prior_sde: prior_sdes.BasePriorSDE = (
                 prior_sdes.prior_sdes_dict["brownian"](observed_dims)
             )
@@ -168,7 +168,7 @@ class Model(pl.LightningModule):
 
         self.solve_sde = None
         self.optim_sde = None
-        self.optim_likelihood = None
+        self.optim_likelihood: priors.BasePrior
         self.data_type = None
 
         # Sigma exponent
