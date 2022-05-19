@@ -9,10 +9,10 @@ from pytorch_lightning import Trainer
 from pytorch_lightning import loggers as pl_loggers
 import datetime
 
+os.environ["MPLCONFIGDIR"] = os.getcwd() + "/configs/"
 from datasets import datasets_dict, BaseDataGenerator
 from models import Model
 
-os.environ["MPLCONFIGDIR"] = os.getcwd() + "/configs/"
 
 flags.DEFINE_bool(
     "restore",
@@ -76,10 +76,12 @@ class ModelTrainer:
         parent_folder += f"data_{FLAGS.dataset}/"
         parent_folder += f"prior_{FLAGS.prior}/"
 
-        parent_folder += f"solver={FLAGS.solver}_numSteps={FLAGS.num_steps}/"
-
         if FLAGS.do_dsb:
-            parent_folder += "dsb/"
+            solver = "dsb"
+        else:
+            solver = FLAGS.solver
+
+        parent_folder += f"priorSde={FLAGS.prior_sde}_solver={solver}_numSteps={FLAGS.num_steps}/"
 
         self.summary_folder = parent_folder + "summary/"
         self.results_folder = parent_folder + "results/"
