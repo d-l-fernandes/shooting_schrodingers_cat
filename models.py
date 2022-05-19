@@ -33,10 +33,7 @@ flags.DEFINE_float(
 )
 flags.DEFINE_float("sigma", 1e-3, "STD to use in Gaussian.")
 
-flags.DEFINE_enum("solver", "srk", ["em", "srk", "rossler"], "Solver to use")
-flags.DEFINE_enum(
-    "solver_val", "srk", ["em", "srk", "rossler"], "Solver to use in validation"
-)
+flags.DEFINE_enum("solver", "em", ["em", "srk", "rossler"], "Solver to use")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
@@ -326,26 +323,26 @@ class Model(pl.LightningModule):
                 x_data,
                 self.initial_prior_sde,
                 self.time_values_eval,
-                method=FLAGS.solver_val,
+                method=FLAGS.solver,
             )
             z_forward = self.solve(
                 x_prior,
                 self.initial_prior_sde,
                 self.time_values_eval,
-                method=FLAGS.solver_val,
+                method=FLAGS.solver,
             )
         else:
             z_backward = self.solve(
                 x_data,
                 self.backward_sde,
                 self.time_values_eval,
-                method=FLAGS.solver_val,
+                method=FLAGS.solver,
             )
             z_forward = self.solve(
                 x_prior,
                 self.forward_sde,
                 self.time_values_eval,
-                method=FLAGS.solver_val,
+                method=FLAGS.solver,
             )
 
         output = Output(
