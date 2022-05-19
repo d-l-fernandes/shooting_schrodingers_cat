@@ -196,6 +196,8 @@ class Model(pl.LightningModule):
             self.optim_likelihood = self.likelihood_forwards
             self.data_type = "data"
 
+        self.prior_sde.forward = forward
+
         if FLAGS.apply_prior_initial:
             self.scale = FLAGS.scale
         else:
