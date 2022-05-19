@@ -1,8 +1,6 @@
 import torch
 from absl import flags
 from torch import distributions
-from torch.autograd.functional import jacobian
-from sklearn import datasets
 
 Tensor = torch.Tensor
 
@@ -10,9 +8,9 @@ flags.DEFINE_enum("prior_sde", "brownian",
                   [
                       "brownian",
                       "whirlpool",
+                      "menorah",
                       "hill",
-                      "maze",
-                      "spiral"
+                      "periodic"
                   ],
                   "Prior to use.")
 flags.DEFINE_float("hill_scale", 1., "Scale of hill potential.")
@@ -23,6 +21,7 @@ class BasePriorSDE:
     def __init__(self, dims: int):
         super().__init__()
         self.dims = dims
+        self.forward = True
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         raise NotImplementedError
@@ -60,11 +59,15 @@ class Whirlpool(BasePriorSDE):
             raise RuntimeError("Whirlpool only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.u(x)
+        if self.forward:
+            scale = -1.
+        else:
+            scale = 1.
+        return scale * self.u(x)
 
     @staticmethod
     def u(x: Tensor) -> Tensor:
-        y = 3.5 * torch.cat((-x[..., 1].unsqueeze(-1), x[..., 0].unsqueeze(-1)), dim=-1)
+        y = 3. * torch.cat((-x[..., 1].unsqueeze(-1), x[..., 0].unsqueeze(-1)), dim=-1)
         return y
 
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
@@ -75,7 +78,40 @@ class Whirlpool(BasePriorSDE):
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.u(x))
-        sigma = torch.einsum("a...,a->a...", diffusions, torch.sqrt(delta_ts))
+        sigma = torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), diffusions * torch.sqrt(delta_ts))
+        return distributions.Independent(distributions.Normal(x + scale * drifts, sigma), 1)
+
+
+class Menorah(BasePriorSDE):
+    def __init__(self, dims: int):
+        super().__init__(dims)
+        self.noise_type = "additive"
+        self.sde_type = "ito"
+        if dims != 2:
+            raise RuntimeError("Menorah only applicable to 2D.")
+
+    def f(self, t: Tensor, x: Tensor) -> Tensor:
+        if self.forward:
+            scale = -1.
+        else:
+            scale = 1.
+        return scale * self.u(x)
+
+    @staticmethod
+    def u(x: Tensor) -> Tensor:
+        sign = torch.sign(x[..., 1])
+        y = 2 * torch.cat(x[..., 0].unsqueeze(-1), (torch.sqrt(x[..., 1] * sign) * sign).unsqueeze(-1), dim=-1)
+        return y
+
+    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
+        if forward:
+            scale = -1.
+        else:
+            scale = 1.
+        delta_ts = ts[1:] - ts[:-1]
+        diffusions = self.g(ts[:-1], x)
+        drifts = torch.einsum("a, a...->a...", delta_ts, self.u(x))
+        sigma = torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), diffusions * torch.sqrt(delta_ts))
         return distributions.Independent(distributions.Normal(x + scale * drifts, sigma), 1)
 
 
@@ -110,178 +146,33 @@ class Hill(BasePriorSDE):
         return distributions.Independent(distributions.Normal(x + drifts, sigma), 1)
 
 
-class Maze(BasePriorSDE):
+class Periodic(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
         self.noise_type = "additive"
         self.sde_type = "ito"
-        self.fac = 1.
-        self.delta = 0.01
+        self.scale = 0.5
         if dims != 2:
-            raise RuntimeError("Maze only applicable to 2D.")
+            raise RuntimeError("Periodic only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         return self.grad_u(x[..., 0], x[..., 1])
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
-        # First vertical
-        y1_1 = \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.0) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.125) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.25) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.375) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.5) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.625) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.75) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 0.875) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x + 0.6) ** 2 + (y - 1.) ** 2) / self.delta) / self.delta
-
-        # Second vertical
-        y2_1 = \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.0) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.125) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.25) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.375) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.5) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.625) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.75) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 0.875) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.0) ** 2 + (y + 1.) ** 2) / self.delta) / self.delta
-
-        # Third vertical
-        y3_1 = \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.0) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.125) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.25) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.375) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.5) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.625) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.75) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 0.875) ** 2) / self.delta) / self.delta + \
-            self.fac * torch.exp(- ((x - 0.6) ** 2 + (y - 1.) ** 2) / self.delta) / self.delta
-
-        return y1_1 + y2_1 + y3_1
-
-    def _u(self, x: Tensor):
-        return self.u(x[..., 0], x[..., 1])
+        z = (y - self.scale * torch.sin(torch.pi * x)) ** 2
+        return z
 
     def grad_u(self, x: Tensor, y: Tensor) -> Tensor:
-        # First vertical
-        u1_1 = \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.000) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.125) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.250) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.375) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.500) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.625) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.750) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.875) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.600) * torch.exp(- ((x + 0.6) ** 2 + (y - 1.000) ** 2) / self.delta) / self.delta**2
-        v1_1 = \
-            self.fac * 2 * (y - 0.000) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.000) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.125) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.125) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.250) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.250) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.375) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.375) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.500) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.500) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.625) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.625) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.750) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.750) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.875) * torch.exp(- ((x + 0.6) ** 2 + (y - 0.875) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 1.000) * torch.exp(- ((x + 0.6) ** 2 + (y - 1.000) ** 2) / self.delta) / self.delta**2
+        u = 2 * torch.pi * self.scale * torch.cos(torch.pi * x) * (y - self.scale * torch.sin(torch.pi * x))
+        v = - 2 * (y - self.scale * torch.sin(torch.pi * x))
+        return torch.cat((u.unsqueeze(-1), v.unsqueeze(-1)), dim=-1)
 
-        # Second vertical
-        u2_1 = \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.000) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.125) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.250) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.375) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.500) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.625) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.750) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.875) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 1.000) ** 2) / self.delta) / self.delta**2
-        v2_1 = \
-            self.fac * 2 * (y + 0.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.000) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.125) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.125) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.250) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.250) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.375) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.375) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.500) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.500) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.625) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.625) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.750) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.750) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 0.875) * torch.exp(- ((x + 0.0) ** 2 + (y + 0.875) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y + 1.000) * torch.exp(- ((x + 0.0) ** 2 + (y + 1.000) ** 2) / self.delta) / self.delta**2
-
-        # Second vertical
-        u3_1 = \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.000) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.125) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.250) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.375) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.500) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.625) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.750) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.875) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (x - 0.600) * torch.exp(- ((x - 0.6) ** 2 + (y - 1.000) ** 2) / self.delta) / self.delta**2
-        v3_1 = \
-            self.fac * 2 * (y - 0.000) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.000) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.125) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.125) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.250) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.250) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.375) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.375) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.500) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.500) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.625) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.625) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.750) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.750) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 0.875) * torch.exp(- ((x - 0.6) ** 2 + (y - 0.875) ** 2) / self.delta) / self.delta**2 + \
-            self.fac * 2 * (y - 1.000) * torch.exp(- ((x - 0.6) ** 2 + (y - 1.000) ** 2) / self.delta) / self.delta**2
-
-        return torch.cat(((u1_1 + u2_1 + u3_1).unsqueeze(-1), (v1_1 + v2_1 + v3_1).unsqueeze(-1)), dim=-1)
-
-    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
+    def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
         delta_ts = ts[1:] - ts[:-1]
         diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
         drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x[..., 0], x[..., 1]))
-        return distributions.MultivariateNormal(
-            loc=x + drifts, scale_tril=scale_tril)
-
-
-class Spiral(BasePriorSDE):
-    def __init__(self, dims: int):
-        super().__init__(dims)
-        if dims != 2:
-            raise RuntimeError("Hill only applicable to 2D.")
-
-        self.noise_type = "additive"
-        self.sde_type = "ito"
-        self.fac = 5.
-        self.scaling_factor = 4.
-
-        x, y = datasets.make_swiss_roll(1000, noise=0.2)
-        self.locs = torch.tensor(x)[:, [0, 2]]
-        self.locs = (self.locs - self.locs.mean()) / self.locs.std() * self.scaling_factor
-        self.locs = self.locs.float()
-        self.scale_tril = torch.diag_embed(torch.ones_like(self.locs) * 0.1)
-
-    def f(self, t: Tensor, x: Tensor) -> Tensor:
-        return self.grad_u(x)
-
-    def u(self, x: Tensor, y: Tensor) -> Tensor:
-        positions = torch.vstack([torch.flatten(x), torch.flatten(y)]).permute(1, 0)
-
-        return self._u(positions.float()).reshape((x.shape[0], x.shape[-1]))
-
-    def _u(self, x: Tensor) -> Tensor:
-        norm = distributions.MultivariateNormal(loc=self.locs.to(x.device), scale_tril=self.scale_tril.to(x.device))
-        return self.fac * torch.exp(norm.log_prob(x.unsqueeze(-2))).sum(-1)
-
-    def grad_u(self, x) -> Tensor:
-        return -jacobian(lambda x_grad: self._u(x_grad).sum(), x)
-
-    def transition_density(self, ts: Tensor, x: Tensor, y: Tensor, forward: bool) -> Tensor:
-        delta_ts = ts[1:] - ts[:-1]
-        diffusions = self.g(ts[:-1], x)
-        scale_tril = torch.einsum("a, a...->a...", torch.sqrt(delta_ts), diffusions)
-        drifts = torch.einsum("a, a...->a...", delta_ts, self.grad_u(x))
-        return distributions.MultivariateNormal(
-            loc=x + drifts, scale_tril=scale_tril)
+        sigma = torch.einsum("a...,a->a...", torch.ones_like(x, device=x.device), diffusions * torch.sqrt(delta_ts))
+        return distributions.Independent(distributions.Normal(x + drifts, sigma), 1)
 
 
 class SDE:
@@ -297,7 +188,7 @@ class SDE:
 prior_sdes_dict = {
     "brownian": Brownian,
     "whirlpool": Whirlpool,
+    "menorah": Menorah,
     "hill": Hill,
-    "maze": Maze,
-    "spiral": Spiral,
+    "periodic": Periodic,
 }
