@@ -17,7 +17,7 @@ Tensor = torch.Tensor
 FLAGS = flags.FLAGS
 
 
-def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor]]) -> Union[Tensor, Tuple[Tensor]]:
+def stein_discrepancy(theta: Tensor, p_grad: Union[Tensor, Tuple[Tensor, ...]]) -> Union[Tensor, Tuple[Tensor, ...]]:
 
     diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3)
     pairwise_dists = torch.sum(diffs**2, -1)
