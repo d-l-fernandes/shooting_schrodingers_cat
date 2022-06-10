@@ -59,20 +59,16 @@ class Metrics(NamedTuple):
     wasserstein_prior: Tensor
     wasserstein_data: Tensor
     wasserstein_total: Tensor
-    mean_prior: Tensor
-    mean_data: Tensor
-    std_prior: Tensor
-    std_data: Tensor
+    prior_ll_forwards: Tensor
+    prior_ll_backwards: Tensor
 
     def __add__(self, other: Metrics):
         return Metrics(
             torch.cat((self.wasserstein_prior, other.wasserstein_prior)),
             torch.cat((self.wasserstein_data, other.wasserstein_data)),
             torch.cat((self.wasserstein_total, other.wasserstein_total)),
-            torch.cat((self.mean_prior, other.mean_prior)),
-            torch.cat((self.mean_data, other.mean_data)),
-            torch.cat((self.std_prior, other.std_prior)),
-            torch.cat((self.std_data, other.std_data)),
+            torch.cat((self.prior_ll_forwards, other.prior_ll_forwards)),
+            torch.cat((self.prior_ll_backwards, other.prior_ll_backwards)),
         )
 
 
@@ -109,8 +105,6 @@ class Model(pl.LightningModule):
         self.automatic_optimization = False
         self.observed_dims = observed_dims
         self.metrics = Metrics(
-            torch.tensor([]),
-            torch.tensor([]),
             torch.tensor([]),
             torch.tensor([]),
             torch.tensor([]),
@@ -395,20 +389,28 @@ class Model(pl.LightningModule):
         )
         total_wasserstein = prior_wasserstein + data_wasserstein
 
+        p_prior_backward = self.prior_sde.transition_density(
+            self.time_values_eval.to(self.device), final_output.z_values_backward.permute(1, 0, 2)[:-1], True)
+        p_prior_forward = self.prior_sde.transition_density(
+            self.time_values_eval.to(self.device), final_output.z_values_forward.permute(1, 0, 2)[:-1], False)
+
+        ll_backward = p_prior_backward.log_prob(final_output.z_values_backward.permute(1, 0, 2)[1:]).mean()
+        ll_forward = p_prior_forward.log_prob(final_output.z_values_forward.permute(1, 0, 2)[1:]).mean()
+
         metrics = Metrics(
             torch.tensor([prior_wasserstein]),
             torch.tensor([data_wasserstein]),
             torch.tensor([total_wasserstein]),
-            final_output.z_values_backward[:, -1].mean(0, keepdim=True).cpu(),
-            final_output.z_values_forward[:, -1].mean(0, keepdim=True).cpu(),
-            final_output.z_values_backward[:, -1].std(0, keepdim=True).cpu(),
-            final_output.z_values_forward[:, -1].std(0, keepdim=True).cpu(),
+            torch.tensor([ll_forward]),
+            torch.tensor([ll_backward]),
         )
         if not self.trainer.sanity_checking:
             log_metrics = {
                 "wasserstein_prior": prior_wasserstein,
                 "wasserstein_data": data_wasserstein,
                 "wasserstein_total": total_wasserstein,
+                "ll_forward": ll_forward,
+                "ll_backward": ll_backward,
             }
             self.log("eval", log_metrics)
             self.log("data", data_wasserstein, prog_bar=True, logger=False)
