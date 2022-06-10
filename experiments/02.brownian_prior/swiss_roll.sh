@@ -11,15 +11,6 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --dataset=swiss_roll \
     --prior=gaussian \
     --prior_sde=brownian \
-    --batch_size=1500 \
-    --num_epochs=20 \
-    --learning_rate=1e-3 \
-    --schedule_iter=0 \
-    --num_steps=20 \
-    --sigma=1e-5 \
-    --max_gamma=1. \
-    --initial_gamma=0.1 \
     --solver=$solver \
-    --gpus="$number_gpus" \
-    --scale=1.0
+    --gpus="$number_gpus"
     
