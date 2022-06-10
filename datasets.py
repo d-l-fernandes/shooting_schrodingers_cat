@@ -154,28 +154,48 @@ class BaseDataGenerator(LightningDataModule):
         raise NotImplementedError
 
     @staticmethod
-    def plot_objective(gs: Any, fig: Figure, metrics: Metrics):
+    def plot_objective(gs_obj: Any, gs_ll: Any, fig_obj: Figure, fig_ll: Figure, metrics: Metrics):
         wasserstein_prior = metrics.wasserstein_prior.cpu().detach().numpy()
         wasserstein_data = metrics.wasserstein_data.cpu().detach().numpy()
         wasserstein_total = metrics.wasserstein_total.cpu().detach().numpy()
+        ll_forwards = metrics.prior_ll_forwards.cpu().detach().numpy()
+        ll_backwards = metrics.prior_ll_backwards.cpu().detach().numpy()
 
         # Objective plotting
         epochs_array = np.arange(0, wasserstein_prior.shape[0])
-        ax_objective: Axes = fig.add_subplot(gs[0, :])
+        ax_objective: Axes = fig_obj.add_subplot(gs_obj[0, :])
+        ax_ll: Axes = fig_ll.add_subplot(gs_ll[0, :])
 
         indices = np.arange(0, wasserstein_prior.shape[0])
         ax_objective.plot(epochs_array[indices], wasserstein_prior[indices], c="r", label="prior")
         ax_objective.plot(epochs_array[indices], wasserstein_data[indices], c="b", label="data")
         ax_objective.plot(epochs_array[indices], wasserstein_total[indices], c="k", label="total")
         ax_objective.set_xlabel("Epoch")
-        ax_objective.set_yscale("symlog")
+        # ax_objective.set_yscale("symlog")
         ax_objective.legend(loc=2)
         ax_objective.grid(True)
+        ax_ll.plot(epochs_array[indices], ll_forwards[indices], c="r", label="ll_forwards")
+        ax_ll.plot(epochs_array[indices], ll_backwards[indices], c="b", label="ll_backwards")
+        ax_ll.set_xlabel("Epoch")
+        # ax_ll.set_yscale("symlog")
+        ax_ll.legend(loc=2)
+        ax_ll.grid(True)
+
+        if len(indices) > 2:
+            ax_objective.set_ylim(top=1.1 * (np.sum(wasserstein_total) / len(indices)))
+            ax_ll_minimum = min(np.sum(ll_forwards) / len(indices),
+                                np.sum(ll_backwards) / len(indices))
+            if ax_ll_minimum > 0:
+                ax_ll_minimum *= 0.99
+            else:
+                ax_ll_minimum *= 1.01
+            ax_ll.set_ylim(bottom=ax_ll_minimum)
+
         if len(indices) != 0:
             total_min = np.argmin(wasserstein_total)
-            ax_objective.vlines(total_min, wasserstein_total[total_min], 2 * wasserstein_total[total_min], color="k")
+            ax_objective.vlines(total_min, wasserstein_total[total_min], 1.05 * wasserstein_total[total_min], color="k")
             ax_objective.annotate(f"{wasserstein_total[total_min]:.3f}",
-                                  xy=(total_min, 2 * wasserstein_total[total_min]),
+                                  xy=(total_min, 1.05 * wasserstein_total[total_min]),
                                   xytext=(-3, 3), textcoords="offset points", horizontalalignment="right",
                                   verticalalignment="bottom")
 
@@ -196,7 +216,12 @@ class BaseDataGenerator(LightningDataModule):
                                       left=0.1, right=0.9, bottom=0.1, top=0.9,
                                       wspace=0.1, hspace=0.1)
 
-            self.plot_objective(gs, fig_obj, metrics)
+            fig_ll: Figure = figure.Figure(figsize=(15, 15))
+            gs_ll = fig_ll.add_gridspec(1, 1, height_ratios=(1,), width_ratios=(1,),
+                                        left=0.1, right=0.9, bottom=0.1, top=0.9,
+                                        wspace=0.1, hspace=0.1)
+
+            self.plot_objective(gs, gs_ll, fig_obj, fig_ll, metrics)
             # Plotting
             fig_z_backwards: Figure = figure.Figure(figsize=(15, 15))
             ax_z_backwards: Axes = fig_z_backwards.add_subplot(1, 1, 1)
@@ -219,7 +244,7 @@ class BaseDataGenerator(LightningDataModule):
             ax_z_1.set_ylim(self.x_lims[1][0], self.x_lims[1][1])
             ax_z_1.set_xlim(self.x_lims[0][0], self.x_lims[0][1])
 
-            t_values = model.time_values.cpu().detach().numpy()
+            t_values = model.time_values_eval.cpu().detach().numpy()
 
             if type(model.prior_sde) in [prior_sdes.Hill, prior_sdes.Periodic]:
                 xx, yy = np.meshgrid(np.linspace(self.x_lims[0][0], self.x_lims[0][1], 100),
@@ -228,10 +253,10 @@ class BaseDataGenerator(LightningDataModule):
                     torch.tensor(xx).to(output.z_values_forward.device),
                     torch.tensor(yy).to(output.z_values_forward.device),
                 ).detach().cpu().numpy()
-                ax_z_1.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
-                ax_z_0.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
-                ax_z_backwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
-                ax_z_forwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto")
+                ax_z_1.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto", rasterized=True)
+                ax_z_0.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto", rasterized=True)
+                ax_z_backwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto", rasterized=True)
+                ax_z_forwards.pcolormesh(xx, yy, zz, alpha=0.6, cmap="binary", shading="auto", rasterized=True)
 
             norm = plt.Normalize(t_values.min(), t_values.max())
 
@@ -272,8 +297,8 @@ class BaseDataGenerator(LightningDataModule):
                                   c="darkorange",
                                   alpha=0.2, marker="o", zorder=3)
 
-            return [fig_obj, fig_z_forwards, fig_z_backwards, fig_z_0, fig_z_1], \
-                   ["objective", "forwards", "backwards", "z_0", "z_1"]
+            return [fig_obj, fig_ll, fig_z_forwards, fig_z_backwards, fig_z_0, fig_z_1], \
+                   ["objective", "ll", "forwards", "backwards", "z_0", "z_1"]
 
         else:
             raise ValueError("Dims must be 2")
