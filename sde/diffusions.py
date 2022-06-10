@@ -5,8 +5,8 @@ Tensor = torch.Tensor
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-flags.DEFINE_float("initial_gamma", -1, lower_bound=-1, help="Initial diffusion.")
-flags.DEFINE_float("max_gamma", -1, lower_bound=-1, help="Maximum diffusion.")
+flags.DEFINE_float("initial_gamma", 0.1, lower_bound=-1, help="Initial diffusion.")
+flags.DEFINE_float("max_gamma", 1., lower_bound=-1, help="Maximum diffusion.")
 flags.DEFINE_float("total_gamma", -1, lower_bound=-1, help="Total diffusion.")
 FLAGS = flags.FLAGS
 
