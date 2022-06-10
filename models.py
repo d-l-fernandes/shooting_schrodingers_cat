@@ -14,16 +14,14 @@ from weak_solver.sdeint import integrate, integrate_parallel_time_steps
 from stein import kernel
 
 flags.DEFINE_integer("num_steps", 20, "Number of time steps", lower_bound=1)
+flags.DEFINE_integer("num_steps_eval", 100, "Number of time steps", lower_bound=1)
 flags.DEFINE_integer("num_iter", 25, "Number of IPFP iterations", lower_bound=1)
-flags.DEFINE_integer("num_epochs", 10, "Number of epochs.")
+flags.DEFINE_integer("num_epochs", 25, "Number of epochs.")
 flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bound=1)
 flags.DEFINE_integer("num_samples", 5, "Number of one-step samples", lower_bound=1)
 
 flags.DEFINE_float("final_time", 1.0, "Final time.")
-flags.DEFINE_float("learning_rate", 1e-3, "Learning rate of the optimizer.")
-flags.DEFINE_float("schedule_scale", 0.1**0.2, "Learning rate scheduler scale.")
-flags.DEFINE_float("schedule_iter", 0, "Learning rate scheduler iterations.")
-flags.DEFINE_float("grad_clip", 1.0, "Norm of gradient clip to use.")
+flags.DEFINE_float("learning_rate", 5e-4, "Learning rate of the optimizer.")
 flags.DEFINE_float("scale", 1.0, "Regularization scale to use", lower_bound=0.0)
 flags.DEFINE_float(
     "scale_increment",
@@ -31,14 +29,14 @@ flags.DEFINE_float(
     "Increment to regularization scale per IPFP iteration",
     lower_bound=0.0,
 )
-flags.DEFINE_float("sigma", 1e-3, "STD to use in Gaussian.")
+flags.DEFINE_float("sigma", 1e-4, "STD to use in Gaussian.")
 
 flags.DEFINE_enum("solver", "em", ["em", "srk", "rossler"], "Solver to use")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
 flags.DEFINE_bool(
-    "no_prior_last_step", True, "Whether to set the prior KSD to 0 at last step."
+    "no_prior_last_step", False, "Whether to set the prior KSD to 0 at last step."
 )
 flags.DEFINE_bool(
     "use_brownian_initial", True, "Whether to use Brownian motion as initial SDE."
@@ -125,7 +123,8 @@ class Model(pl.LightningModule):
             0, self.final_t, FLAGS.num_steps + 1, device=self.device
         )
         self.time_values_eval = torch.linspace(
-            0, self.final_t, FLAGS.num_steps, device=self.device
+            # 0, self.final_t, FLAGS.num_steps_eval, device=self.device
+            0, self.final_t, FLAGS.num_steps + 1, device=self.device
         )
 
         # SDE
@@ -165,6 +164,9 @@ class Model(pl.LightningModule):
         self.likelihood_forwards: priors.BasePrior = priors.priors_dict[
             FLAGS.prior_dist
         ](observed_dims, observed_dims)
+
+        # KSD calculator
+        self.ksd_calc = kernel.KSDCalculator()
 
         self.solve_sde = None
         self.optim_sde = None
@@ -241,6 +243,7 @@ class Model(pl.LightningModule):
         grad_p_ys_prior = grad_p_ys_prior.permute(1, 2, 0, 3)
 
         ksds = kernel.stein_discrepancy(
+        ksds = self.ksd_calc.stein_discrepancy(
             xs, (grad_p_ys, grad_p_ys_prior)
         )
 
@@ -309,8 +312,8 @@ class Model(pl.LightningModule):
                     torch.flip(self.final_t - self.time_values, [0])
                 )
 
-        metrics = dict()
 
+        metrics = dict()
         for _ in range(FLAGS.batch_repeats):
             optim.zero_grad()
             if FLAGS.do_dsb:
@@ -320,7 +323,6 @@ class Model(pl.LightningModule):
                                       self.time_values.to(xs.device).to(xs.dtype), True, method=FLAGS.solver)
                 loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
             self.manual_backward(loss)
-            torch.nn.utils.clip_grad_norm_(self.parameters(), FLAGS.grad_clip)
             optim.step()
         self.log(
             "training", metrics, on_step=True, on_epoch=False, add_dataloader_idx=False
@@ -367,13 +369,8 @@ class Model(pl.LightningModule):
                 self.first = False
 
             if (self.current_epoch + 1) % (FLAGS.num_iter * 2) == 0:
-                if self.ipfp_iteration < FLAGS.schedule_iter:
-                    lr_scheduler_backward, lr_scheduler_forward = self.lr_schedulers()
-                    lr_scheduler_backward.step()
-                    lr_scheduler_forward.step()
                 self.ipfp_iteration += 1
             self.get_drift_diffusion(self.first, self.going_forward)
-            torch.cuda.empty_cache()
 
     def validation_step(self, batch, _):
         x_prior = batch["prior"]
@@ -453,13 +450,7 @@ class Model(pl.LightningModule):
                 },
             ]
         )
-        scheduler_backward = torch.optim.lr_scheduler.ExponentialLR(
-            optim_backward, FLAGS.schedule_scale
-        )
-        scheduler_forward = torch.optim.lr_scheduler.ExponentialLR(
-            optim_forward, FLAGS.schedule_scale
-        )
-        return [optim_backward, optim_forward], [scheduler_backward, scheduler_forward]
+        return [optim_backward, optim_forward]
 
     def make_plot_figs(self, output: Output, step: Union[int, str]) -> None:
 
@@ -472,7 +463,6 @@ class Model(pl.LightningModule):
         del fig_list
         del name_list
         del output
-        # gc.collect()
 
     def save_figs(
         self, fig_names: List[str], figs: List[Figure], step: Union[int, str]
@@ -485,7 +475,7 @@ class Model(pl.LightningModule):
 
         final = len(fig_names)
         for i in range(final - 1, -1, -1):
-            figs[i].savefig(f"{self.results_folder}{fig_names[i]}_{name}.png")
+            figs[i].savefig(f"{self.results_folder}{fig_names[i]}_{name}.pdf", format="pdf")
             figs[i].clf()
             plt.clf()
             plt.cla()
