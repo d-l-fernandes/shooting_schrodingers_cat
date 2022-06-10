@@ -46,6 +46,9 @@ flags.DEFINE_bool(
     False,
     "Whether to apply KSD prior in initial IPFP iteration.",
 )
+flags.DEFINE_bool(
+    "use_sigma_prior", False, "Whether to use the sampled version of the prior"
+)
 
 FLAGS = flags.FLAGS
 
@@ -231,18 +234,19 @@ class Model(pl.LightningModule):
 
         # Likelihood
         p_ys = self.optim_likelihood(ys[1:], self.sigma)
-        # p_ys_prior = self.prior_sde.transition_density(time_values, s_is, self.going_forward)
-        p_ys_prior = self.optim_likelihood(ys_prior, self.sigma)
-
-        # Variational KSD
         grad_p_ys = functorch.grad(lambda x: p_ys.log_prob(x).sum())(xs)
-        grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
-
-        xs = xs.permute(1, 2, 0, 3)
         grad_p_ys = grad_p_ys.permute(1, 2, 0, 3)
-        grad_p_ys_prior = grad_p_ys_prior.permute(1, 2, 0, 3)
 
-        ksds = kernel.stein_discrepancy(
+        if FLAGS.use_sigma_prior:
+            p_ys_prior = self.optim_likelihood(ys_prior, self.sigma)
+            grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
+            xs = xs.permute(1, 2, 0, 3)
+            grad_p_ys_prior = grad_p_ys_prior.permute(1, 2, 0, 3)
+        else:
+            p_ys_prior = self.prior_sde.transition_density(time_values, s_is, self.going_forward)
+            xs = xs.permute(1, 2, 0, 3)
+            grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
+
         ksds = self.ksd_calc.stein_discrepancy(
             xs, (grad_p_ys, grad_p_ys_prior)
         )
@@ -252,21 +256,19 @@ class Model(pl.LightningModule):
         ksd = ksd.mean(-1)
         ksd_prior = ksd_prior.mean(-1)
 
-        # delta_ts = time_values[1:] - time_values[:-1]
-        # diffusions = sde.g(time_values[:-1], s_is)
-        #
-        # ksd_prior = torch.einsum(
-        #     "a,a...->a...",
-        #     (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
-        #     ksd_prior,
-        # )
-        #
+        if not FLAGS.use_sigma_prior:
+            delta_ts = time_values[1:] - time_values[:-1]
+            diffusions = sde.g(time_values[:-1], s_is)
+
+            ksd_prior = torch.einsum(
+                "a,a...->a...",
+                (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
+                ksd_prior,
+            )
+
         ksd_prior[-1] = ksd_prior[-1] * int(not FLAGS.no_prior_last_step)
 
-        # ksd_prior = torch.minimum(ksd_prior, self.scale * ksd_prior * ksd.sum().detach() / ksd_prior.sum().detach())
-        # obj = ksd.sum() + self.scale * ksd_prior.sum()
         obj = (ksd + self.scale * ksd_prior).sum()
-        # obj = ksd.sum() + ksd_prior.sum()
         metrics = {
             "ksd": ksd.sum() * self.sigma**4,
             "ksd_prior": ksd_prior.sum() * self.sigma**4,
@@ -304,7 +306,7 @@ class Model(pl.LightningModule):
                 delta_ts = delta_ts / delta_ts.sum() * self.final_t
                 self.time_values = torch.cat(
                     (torch.tensor([0.0], device=x.device), torch.cumsum(delta_ts, 0))
-                ).detach()
+                )
                 xs = self.solve(
                     x, self.solve_sde, self.time_values, method=FLAGS.solver
                 )
@@ -312,6 +314,12 @@ class Model(pl.LightningModule):
                     torch.flip(self.final_t - self.time_values, [0])
                 )
 
+            if FLAGS.use_sigma_prior:
+                xs_prior = self.solve(torch.flip(xs, [0])[:-1], self.prior_sde,
+                                      self.time_values.to(xs.device).to(xs.dtype),
+                                      parallel_time_steps=True, method=FLAGS.solver)
+            else:
+                xs_prior = None
 
         metrics = dict()
         for _ in range(FLAGS.batch_repeats):
@@ -319,8 +327,6 @@ class Model(pl.LightningModule):
             if FLAGS.do_dsb:
                 loss, metrics = self.loss_dsb(xs, self.optim_sde, self.solve_sde)
             else:
-                xs_prior = self.solve(torch.flip(xs, [0])[:-1], self.prior_sde,
-                                      self.time_values.to(xs.device).to(xs.dtype), True, method=FLAGS.solver)
                 loss, metrics = self.loss(xs, xs_prior, self.optim_sde)
             self.manual_backward(loss)
             optim.step()
