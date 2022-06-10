@@ -100,7 +100,8 @@ class Menorah(BasePriorSDE):
     @staticmethod
     def u(x: Tensor) -> Tensor:
         sign = torch.sign(x[..., 1])
-        y = 2 * torch.cat(x[..., 0].unsqueeze(-1), (torch.sqrt(x[..., 1] * sign) * sign).unsqueeze(-1), dim=-1)
+        y = 2 * torch.cat((x[..., 0].unsqueeze(-1),
+                           (torch.square(x[..., 1] * sign + 0.5) * sign).unsqueeze(-1)), dim=-1)
         return y
 
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
