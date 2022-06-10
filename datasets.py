@@ -45,7 +45,7 @@ datasets_list = [
                     "mnist"
 ]
 
-flags.DEFINE_integer("batch_size", 10, "Batch Size.")
+flags.DEFINE_integer("batch_size", 1500, "Batch Size.")
 # flags.DEFINE_integer("dims", 2, "Number of dims.")
 flags.DEFINE_enum("prior", "gaussian", datasets_list, "Prior to use.")
 flags.DEFINE_enum("dataset", "blobs_2d", datasets_list, "Dataset to use.")
