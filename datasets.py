@@ -459,13 +459,15 @@ class DoubleWellLeft(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(
+            loc=torch.tensor([-1., 0.]),
+            scale_tril=torch.diag_embed(torch.tensor([0.0025, 0.01])**0.5)).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([-1., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_test,))
+        blob_1 = distributions.MultivariateNormal(
+            loc=torch.tensor([-1., 0.]),
+            scale_tril=torch.diag_embed(torch.tensor([0.0025, 0.01])**0.5)).sample((self.n_test,))
         self.xs_test = blob_1
 
         if self.prior_dataset is not None:
@@ -525,13 +527,15 @@ class DoubleWellRight(BaseDataGenerator):
 
     def setup(self, stage: Optional[str] = None) -> None:
         # Train
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_train,))
+        blob_1 = distributions.MultivariateNormal(
+            loc=torch.tensor([1., 0.]),
+            scale_tril=torch.diag_embed(torch.tensor([0.0025, 0.01])**0.5)).sample((self.n_train,))
         self.xs_train = blob_1
 
         # Test
-        blob_1 = distributions.MultivariateNormal(loc=torch.tensor([1., 0.]),
-                                                  scale_tril=torch.eye(2) * 0.1).sample((self.n_test,))
+        blob_1 = distributions.MultivariateNormal(
+            loc=torch.tensor([1., 0.]),
+            scale_tril=torch.diag_embed(torch.tensor([0.0025, 0.01])**0.5)).sample((self.n_test,))
         self.xs_test = blob_1
 
         if self.prior_dataset is not None:
