@@ -16,11 +16,11 @@ FLAGS = flags.FLAGS
 
 
 def mean(tensor: Tensor) -> Tensor:
-    return torch.mean(tensor, dim=-1)
+    return torch.mean(tensor, dim=-2)
 
 
 def median(tensor: Tensor) -> Tensor:
-    return torch.median(tensor, dim=-1)[0]
+    return torch.median(tensor, dim=-2)[0]
 
 
 def unbiased(us: Tuple[Tensor, ...], num_samples: int) -> Tuple[Tensor, ...]:
@@ -50,17 +50,18 @@ class KSDCalculator:
 
     def stein_discrepancy(self, theta: Tensor, p_grad: Tuple[Tensor, ...]) -> Tuple[Tensor, ...]:
         diffs = theta.unsqueeze(-2) - theta.unsqueeze(-3)
-        pairwise_dists = torch.sum(diffs**2, -1)
+        # pairwise_dists = torch.sum(diffs**2, -1)
+        pairwise_dists = diffs**2
 
         indices = torch.triu_indices(theta.shape[-2], theta.shape[-2], 1)
 
-        h = self.scale_function(pairwise_dists[..., indices[0], indices[1]])
+        h = self.scale_function(pairwise_dists[..., indices[0], indices[1], :])
 
-        h = torch.sqrt(h).unsqueeze(-1).unsqueeze(-1)  # / np.log(theta.shape[-2] + 1)
+        h = torch.sqrt(h).unsqueeze(-2).unsqueeze(-2)  # / np.log(theta.shape[-2] + 1)
 
-        kxy = torch.exp(-pairwise_dists / h**2 / 2)
+        kxy = torch.exp(-torch.sum(pairwise_dists / h**2, -1) / 2)
 
-        h = h.unsqueeze(-1)
+        # h = h.unsqueeze(-1)
         dxdkxy = - 1 / h**2 * torch.einsum("...bcd,...bc->...bcd", diffs, kxy)
         trace_dx2d2kxy = torch.einsum("...a,...->...a", -1 / h**4 * diffs**2 + 1 / h**2, kxy).sum(-1)
 
