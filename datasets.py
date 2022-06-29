@@ -181,15 +181,15 @@ class BaseDataGenerator(LightningDataModule):
         ax_ll.legend(loc=2)
         ax_ll.grid(True)
 
-        if len(indices) > 2:
-            ax_objective.set_ylim(top=1.1 * (np.sum(wasserstein_total) / len(indices)))
-            ax_ll_minimum = min(np.sum(ll_forwards) / len(indices),
-                                np.sum(ll_backwards) / len(indices))
-            if ax_ll_minimum > 0:
-                ax_ll_minimum *= 0.99
-            else:
-                ax_ll_minimum *= 1.01
-            ax_ll.set_ylim(bottom=ax_ll_minimum)
+        # if len(indices) > 2:
+        #     ax_objective.set_ylim(top=1.1 * (np.sum(wasserstein_total) / len(indices)))
+        #     ax_ll_minimum = min(np.sum(ll_forwards) / len(indices),
+        #                         np.sum(ll_backwards) / len(indices))
+        #     if ax_ll_minimum > 0:
+        #         ax_ll_minimum *= 0.99
+        #     else:
+        #         ax_ll_minimum *= 1.01
+        #     ax_ll.set_ylim(bottom=ax_ll_minimum)
 
         if len(indices) != 0:
             total_min = np.argmin(wasserstein_total)
