@@ -120,7 +120,7 @@ class Model(pl.LightningModule):
             0, self.final_t, FLAGS.num_steps + 1, device=self.device
         )
         self.time_values_eval = torch.linspace(
-            # 0, self.final_t, FLAGS.num_steps_eval, device=self.device
+            # 0, self.final_t, FLAGS.num_steps_eval + 1, device=self.device
             0, self.final_t, FLAGS.num_steps + 1, device=self.device
         )
 
@@ -241,31 +241,44 @@ class Model(pl.LightningModule):
             xs = xs.permute(1, 2, 0, 3)
             grad_p_ys_prior = functorch.grad(lambda x: p_ys_prior.log_prob(x).sum())(xs)
 
+        # ksds = self.ksd_calc.stein_discrepancy(
+        #     xs, (grad_p_ys, grad_p_ys_prior)
+        # )
+
+        grad_p_ys_prior[-1] = grad_p_ys_prior[-1] * int(not FLAGS.no_prior_last_step)
+        grad_p = (1. - self.scale) * grad_p_ys + self.scale * grad_p_ys_prior
         ksds = self.ksd_calc.stein_discrepancy(
-            xs, (grad_p_ys, grad_p_ys_prior)
+            xs, (grad_p,)
         )
 
         ksd = ksds[0]
-        ksd_prior = ksds[1]
+        # ksd_prior = ksds[1]
         ksd = ksd.mean(-1)
-        ksd_prior = ksd_prior.mean(-1)
+        # ksd_prior = ksd_prior.mean(-1)
+        #
+        # if not FLAGS.use_sigma_prior:
+        #     delta_ts = time_values[1:] - time_values[:-1]
+        #     diffusions = sde.g(time_values[:-1], s_is)
+        #
+        #     ksd_prior = torch.einsum(
+        #         "a,a...->a...",
+        #         (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
+        #         ksd_prior,
+        #     )
+        #
+        # ksd_prior[-1] = ksd_prior[-1] * int(not FLAGS.no_prior_last_step)
 
-        if not FLAGS.use_sigma_prior:
-            delta_ts = time_values[1:] - time_values[:-1]
-            diffusions = sde.g(time_values[:-1], s_is)
+        # ksd_prior = ksd_prior * (ksd.sum() / ksd_prior.sum()).detach()
 
-            ksd_prior = torch.einsum(
-                "a,a...->a...",
-                (delta_ts**0.5 * diffusions) ** 4 / self.sigma**4,
-                ksd_prior,
-            )
-
-        ksd_prior[-1] = ksd_prior[-1] * int(not FLAGS.no_prior_last_step)
-
-        obj = (ksd + self.scale * ksd_prior).sum()
+        # obj = (ksd + self.scale * ksd_prior).sum()
+        # metrics = {
+        #     "ksd": ksd.sum() * self.sigma**4,
+        #     "ksd_prior": ksd_prior.sum() * self.sigma**4,
+        #     "obj": obj * self.sigma**4,
+        # }
+        obj = ksd.sum()
         metrics = {
             "ksd": ksd.sum() * self.sigma**4,
-            "ksd_prior": ksd_prior.sum() * self.sigma**4,
             "obj": obj * self.sigma**4,
         }
         return obj, metrics
