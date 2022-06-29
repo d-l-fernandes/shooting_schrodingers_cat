@@ -12,5 +12,5 @@ hare run --rm -v "$(pwd)":/app --workdir /app --user $(id -u):$(id -g) --runtime
     --prior=gaussian \
     --prior_sde=brownian \
     --solver=$solver \
-    --gpus="$number_gpus"
+    --gpus="$number_gpus" \
     
