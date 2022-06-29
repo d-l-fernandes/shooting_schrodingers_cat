@@ -21,22 +21,22 @@ flags.DEFINE_integer("batch_repeats", 20, "Optimizer steps per batch", lower_bou
 flags.DEFINE_integer("num_samples", 5, "Number of one-step samples", lower_bound=1)
 
 flags.DEFINE_float("final_time", 1.0, "Final time.")
-flags.DEFINE_float("learning_rate", 5e-4, "Learning rate of the optimizer.")
-flags.DEFINE_float("scale", 1.0, "Regularization scale to use", lower_bound=0.0)
+flags.DEFINE_float("learning_rate", 2e-4, "Learning rate of the optimizer.")
+flags.DEFINE_float("scale", 0.25, "Regularization scale to use", lower_bound=0.0)
 flags.DEFINE_float(
     "scale_increment",
     1.0,
     "Increment to regularization scale per IPFP iteration",
     lower_bound=0.0,
 )
-flags.DEFINE_float("sigma", 1e-4, "STD to use in Gaussian.")
+flags.DEFINE_float("sigma", 1e-5, "STD to use in Gaussian.")
 
 flags.DEFINE_enum("solver", "em", ["em", "srk", "rossler"], "Solver to use")
 
 flags.DEFINE_bool("do_dsb", False, "Whether to use dsb.")
 flags.DEFINE_bool("uniform_delta_t", True, "Whether to use uniform delta t")
 flags.DEFINE_bool(
-    "no_prior_last_step", False, "Whether to set the prior KSD to 0 at last step."
+    "no_prior_last_step", True, "Whether to set the prior KSD to 0 at last step."
 )
 flags.DEFINE_bool(
     "use_brownian_initial", True, "Whether to use Brownian motion as initial SDE."
@@ -47,7 +47,7 @@ flags.DEFINE_bool(
     "Whether to apply KSD prior in initial IPFP iteration.",
 )
 flags.DEFINE_bool(
-    "use_sigma_prior", False, "Whether to use the sampled version of the prior"
+    "use_sigma_prior", True, "Whether to use the sampled version of the prior"
 )
 
 FLAGS = flags.FLAGS
@@ -304,9 +304,7 @@ class Model(pl.LightningModule):
                 xs = self.solve(
                     x, self.solve_sde, self.time_values, method=FLAGS.solver
                 )
-                self.time_values = torch.abs(
-                    torch.flip(self.final_t - self.time_values, [0])
-                )
+                self.time_values = torch.flip(self.final_t - self.time_values, [0])
 
             if FLAGS.use_sigma_prior:
                 xs_prior = self.solve(torch.flip(xs, [0])[:-1], self.prior_sde,
