@@ -5,6 +5,5 @@ do_dsb=${4:-False}
 
 # bash ./no_prior.sh $number_gpus $visible_devices $solver $do_dsb
 bash ./hill.sh $number_gpus $visible_devices $solver $do_dsb
-# bash ./bimodal.sh $number_gpus $visible_devices $solver $do_dsb
 
 # bash ./hill.sh $number_gpus $visible_devices $solver $do_dsb $(bc  -l <<< '1/4')

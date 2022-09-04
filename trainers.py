@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import Trainer
 from pytorch_lightning import loggers as pl_loggers
 import datetime
+import torch
 
 os.environ["MPLCONFIGDIR"] = os.getcwd() + "/configs/"
 from datasets import datasets_dict, BaseDataGenerator
@@ -39,7 +40,7 @@ flags.DEFINE_integer("eval_frequency", 50, "How often to evaluate the model.")
 
 FLAGS = flags.FLAGS
 
-MAX_RESTARTS = 5
+MAX_RESTARTS = 10
 
 
 class ModelTrainer:
@@ -162,6 +163,9 @@ class ModelTrainer:
                     )
                     # Wait for a bit, because usually the error lasts for a few seconds
                     time.sleep(30)
+                    del self.trainer
+                    del self.model
+                    torch.cuda.empty_cache()
                     self.restart_trainer()
                     self.run()
                 else:
@@ -172,10 +176,13 @@ class ModelTrainer:
                     raise e
                 else:
                     self.cur_restart += 1
-                    if self.cur_restart <= MAX_RESTARTS:
+                    if self.cur_restart <= MAX_RESTARTS and (not FLAGS.do_dsb):
                         print(
                             f"Value Error! Restarting from latest checkpoint... ({self.cur_restart}/{MAX_RESTARTS})"
                         )
+                        del self.trainer
+                        del self.model
+                        torch.cuda.empty_cache()
                         self.restart_trainer()
                         self.run()
                     else:

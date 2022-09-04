@@ -8,7 +8,7 @@ flags.DEFINE_enum("prior_sde", "brownian",
                   [
                       "brownian",
                       "whirlpool",
-                      "menorah",
+                      "eye_of_sauron",
                       "hill",
                       "periodic"
                   ],
@@ -82,13 +82,13 @@ class Whirlpool(BasePriorSDE):
         return distributions.Independent(distributions.Normal(x + scale * drifts, sigma), 1)
 
 
-class Menorah(BasePriorSDE):
+class EyeOfSauron(BasePriorSDE):
     def __init__(self, dims: int):
         super().__init__(dims)
         self.noise_type = "additive"
         self.sde_type = "ito"
         if dims != 2:
-            raise RuntimeError("Menorah only applicable to 2D.")
+            raise RuntimeError("Eye of Sauron only applicable to 2D.")
 
     def f(self, t: Tensor, x: Tensor) -> Tensor:
         if self.forward:
@@ -160,12 +160,17 @@ class Periodic(BasePriorSDE):
         return self.grad_u(x[..., 0], x[..., 1])
 
     def u(self, x: Tensor, y: Tensor) -> Tensor:
-        z = (y - self.scale * torch.sin(torch.pi * x)) ** 2
+        z = torch.abs(y - self.scale * torch.sin(torch.pi * x))
         return z
 
     def grad_u(self, x: Tensor, y: Tensor) -> Tensor:
-        u = 2 * torch.pi * self.scale * torch.cos(torch.pi * x) * (y - self.scale * torch.sin(torch.pi * x))
-        v = - 2 * (y - self.scale * torch.sin(torch.pi * x))
+        # u = 4 * torch.pi * self.scale * torch.cos(torch.pi * x) * (y - self.scale * torch.sin(torch.pi * x)) ** 3
+        # v = - 4 * (y - self.scale * torch.sin(torch.pi * x)) ** 3
+        potential_no_abs = (y - self.scale * torch.sin(torch.pi * x))
+        scaling_factor = potential_no_abs / torch.abs(potential_no_abs)
+
+        u = scaling_factor * (self.scale * torch.pi * torch.cos(torch.pi * x))
+        v = -scaling_factor
         return torch.cat((u.unsqueeze(-1), v.unsqueeze(-1)), dim=-1)
 
     def transition_density(self, ts: Tensor, x: Tensor, forward: bool) -> distributions.Distribution:
@@ -189,7 +194,7 @@ class SDE:
 prior_sdes_dict = {
     "brownian": Brownian,
     "whirlpool": Whirlpool,
-    "menorah": Menorah,
+    "eye_of_sauron": EyeOfSauron,
     "hill": Hill,
     "periodic": Periodic,
 }
